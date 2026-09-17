@@ -13,14 +13,48 @@ at runtime.
 
 ## Running it
 
+The built league archives are committed, so a fresh clone runs with no data step:
+
 ```bash
 bun install
-bun run fetch:data   # raw sources, downloaded once
-bun run build:data   # builds the five league archives
 bun run dev          # http://localhost:3838
 ```
 
-`bun test` runs the engine suite.
+`bun test` runs the engine suite (26 tests, no network).
+
+### Rebuilding the data
+
+Only needed when adding a season or changing how archives are built. The raw sources are
+gitignored and fetched on demand.
+
+```bash
+bun run fetch:data   # ~100MB: ratings + fixtures
+bun run build:data   # rewrites src/data/*.json
+```
+
+The two fitted models in `src/data/` are committed, so that is enough. To refit them from
+scratch you also need the FIFA 15-23 archive that carries EA's real per-slot ratings:
+
+```bash
+bun run fetch:data -- --legacy    # adds a ~91MB file
+bun scripts/fit-attribute-model.ts
+bun scripts/fit-slot-model.ts
+bun scripts/validate-derived.ts   # reconstruction error + snapshot drift
+bun run build:data
+```
+
+### Deploying
+
+Railway, from the repo root:
+
+```bash
+railway link                      # pick the perfect-xi project
+railway up
+```
+
+`railway.json` holds the build config. Nothing secret lives in the repo — Railway's token
+and project link are in your global `~/.railway/config.json`, keyed by directory, so the
+link has to be re-made on each machine.
 
 ## How a run works
 
