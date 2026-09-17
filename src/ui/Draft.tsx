@@ -1,0 +1,284 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  choicesFor, completedPicks, createDraft, draftPlayer, eligibleClubSeasons,
+  reroll, spin, type DraftConfig, type DraftState,
+} from "../engine/draft.ts";
+import { LEAGUES } from "../engine/leagues.ts";
+import { rateTeam, ratingInSlot, type Pick } from "../engine/ratings.ts";
+import type { ClubSeason, PlayerSeason, Slot } from "../engine/types.ts";
+import { Pitch } from "./Pitch.tsx";
+
+type Sort = "rating" | "position" | "name";
+
+export interface DraftProps {
+  config: DraftConfig;
+  pool: ClubSeason[];
+  onComplete: (picks: Pick[]) => void;
+  onRestart: () => void;
+}
+
+export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
+  const [state, setState] = useState<DraftState>(() => createDraft(config));
+  const [spinning, setSpinning] = useState(false);
+  const [reelClub, setReelClub] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ player: PlayerSeason; slots: Slot[] } | null>(null);
+  const [sort, setSort] = useState<Sort>("rating");
+  const [error, setError] = useState<string | null>(null);
+  const spinTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const bump = useCallback(() => setState((s) => ({ ...s })), []);
+
+  useEffect(() => () => { if (spinTimer.current) clearInterval(spinTimer.current); }, []);
+
+  const filled = completedPicks(state);
+
+  // `state.picks` is mutated in place, so its identity never changes. Key the
+  // memo on a signature of what has actually been drafted.
+  const pickSignature = state.picks.map((p) => (p ? p.player.pid : 0)).join(",");
+
+  const eligible = useMemo(
+    () => eligibleClubSeasons(state, pool),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pickSignature, state.targetSlotIndex, pool],
+  );
+  const ratings = useMemo(
+    () => rateTeam(filled, config.lens).perSlot,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pickSignature, config.lens],
+  );
+  const running = filled.length >= 3 ? rateTeam(filled, config.lens) : null;
+
+  /** Runs the reel animation, then commits the real spin result. */
+  const doSpin = (fn: () => ReturnType<typeof spin> | null) => {
+    if (spinning || eligible.length === 0) return;
+    setError(null);
+    setSpinning(true);
+
+    const names = eligible.map((c) => c.club);
+    spinTimer.current = setInterval(() => {
+      setReelClub(names[Math.floor(Math.random() * names.length)] ?? null);
+    }, 65);
+
+    setTimeout(() => {
+      if (spinTimer.current) clearInterval(spinTimer.current);
+      spinTimer.current = null;
+      setSpinning(false);
+      setReelClub(null);
+      try {
+        const outcome = fn();
+        if (!outcome) setError("No re-rolls left.");
+        bump();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    }, 900);
+  };
+
+  const choices = state.currentClub ? choicesFor(state, state.currentClub) : [];
+
+  const sorted = useMemo(() => {
+    const list = choices.slice();
+    if (sort === "position") return list.sort((a, b) => (a.slots[0] ?? "").localeCompare(b.slots[0] ?? "") || b.bestRating - a.bestRating);
+    if (sort === "name") return list.sort((a, b) => a.player.name.localeCompare(b.player.name));
+    return list.sort((a, b) => b.bestRating - a.bestRating);
+  }, [choices, sort]);
+
+  const take = (player: PlayerSeason, slots: Slot[]) => {
+    const open = state.slots.filter((s) => state.picks[s.index] === null && slots.includes(s.slot));
+    if (open.length === 0) return;
+    if (open.length === 1) {
+      commit(player, open[0]!.index);
+      return;
+    }
+    setPending({ player, slots });
+  };
+
+  const commit = (player: PlayerSeason, slotIndex: number) => {
+    try {
+      draftPlayer(state, player, slotIndex);
+      setPending(null);
+      setError(null);
+      if (state.done) {
+        onComplete(completedPicks(state));
+        return;
+      }
+      bump();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const cfg = LEAGUES[config.league];
+  const openCount = state.picks.filter((p) => p === null).length;
+
+  // Slots the pending player could take, for the pitch highlight.
+  const highlight = useMemo(() => {
+    if (!pending) return undefined;
+    return new Set(
+      state.slots.filter((s) => state.picks[s.index] === null && pending.slots.includes(s.slot)).map((s) => s.index),
+    );
+  }, [pending, state.slots, state.picks]);
+
+  return (
+    <div>
+      <div className="draft-head">
+        <div>
+          <div className="progress-pills" aria-label={`${11 - openCount} of 11 drafted`}>
+            {state.slots.map((s) => (
+              <i key={s.index} className={state.picks[s.index] ? "on" : ""} />
+            ))}
+          </div>
+          <div className="meta-line" style={{ marginTop: 8 }}>
+            <b>{config.formation}</b> · {cfg.country} · {openCount} slot{openCount === 1 ? "" : "s"} left
+            {running && <> · rated <b>{running.overall.toFixed(1)}</b></>}
+          </div>
+        </div>
+        <div className="topbar-actions">
+          <span className="meta-line">Re-rolls <b>{state.rerollsLeft}</b></span>
+          <button className="btn" onClick={onRestart}>↺ Restart</button>
+        </div>
+      </div>
+
+      <div className="draft-grid">
+        <Pitch
+          slots={state.slots}
+          picks={state.picks}
+          ratings={ratings}
+          showRatings={config.showRatings}
+          highlight={highlight}
+          targetIndex={state.targetSlotIndex}
+          onSlotClick={(index) => {
+            if (pending) { commit(pending.player, index); return; }
+            if (config.mode === "position" && state.picks[index] === null) {
+              state.targetSlotIndex = index;
+              state.currentClub = null;
+              bump();
+            }
+          }}
+        />
+
+        <div>
+          {config.mode === "position" && state.targetSlotIndex === null && !state.currentClub ? (
+            <div className="spin-stage">
+              <div className="reel">Pick a position</div>
+              <p className="field-note" style={{ marginBottom: 0 }}>
+                Choose an empty slot on the pitch, then spin for a club to fill it.
+              </p>
+            </div>
+          ) : !state.currentClub ? (
+            <div className="spin-stage">
+              <div className={`reel${spinning ? " spinning" : ""}`}>
+                {reelClub ?? (
+                  state.targetSlotIndex !== null
+                    ? `Spin for ${state.slots[state.targetSlotIndex]!.slot}`
+                    : "Spin the wheel"
+                )}
+              </div>
+              <button
+                className="btn btn-primary btn-lg"
+                disabled={spinning || eligible.length === 0}
+                onClick={() => doSpin(() => spin(state, pool))}
+              >
+                {spinning ? "Spinning…" : "Spin the wheel"}
+              </button>
+              <p className="field-note">
+                {eligible.length.toLocaleString()} club-seasons can fill a remaining slot
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="spin-stage">
+                <div className="reel">
+                  {state.currentClub.club}
+                  <span className="reel-season">{state.currentClub.season}</span>
+                </div>
+                <button
+                  className="btn"
+                  disabled={state.rerollsLeft <= 0 || spinning}
+                  onClick={() => doSpin(() => reroll(state, pool))}
+                >
+                  🔄 Re-roll ({state.rerollsLeft} left)
+                </button>
+              </div>
+
+              <div className="picker">
+                <div className="picker-head">
+                  <div>
+                    <h3>{state.currentClub.club}</h3>
+                    <div className="sub">
+                      {state.currentClub.season} · {sorted.length} eligible
+                      {state.targetSlotIndex !== null && <> for {state.slots[state.targetSlotIndex]!.slot}</>}
+                    </div>
+                  </div>
+                  <div className="sort-row">
+                    {(["rating", "position", "name"] as const).map((s) => (
+                      <button key={s} aria-pressed={sort === s} onClick={() => setSort(s)}>
+                        {s === "rating" ? "Rating ↓" : s === "position" ? "Position" : "A–Z"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="player-list">
+                  {sorted.map(({ player, slots, bestRating }) => (
+                    <button
+                      key={player.pid}
+                      className="player-row"
+                      onClick={() => take(player, slots)}
+                    >
+                      <span className={ratingClass(bestRating, config.showRatings)}>
+                        {config.showRatings ? bestRating : "?"}
+                      </span>
+                      <span className="player-main">
+                        <strong>{player.name}</strong>
+                        <small>{player.nation} · {player.age}</small>
+                      </span>
+                      <span className="pos-tags">
+                        {player.positions.slice(0, 3).map((p) => (
+                          <span key={p} className={`pos-tag${slots.includes(p) ? " fit" : ""}`}>{p}</span>
+                        ))}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {error && <p className="field-note" style={{ color: "var(--bad)" }}>{error}</p>}
+        </div>
+      </div>
+
+      {pending && (
+        <div className="modal-backdrop" onClick={() => setPending(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>{pending.player.name}</h3>
+            <p>Where do they play? Ratings shown are for that slot.</p>
+            <div className="slot-options">
+              {state.slots
+                .filter((s) => state.picks[s.index] === null && pending.slots.includes(s.slot))
+                .map((s) => (
+                  <button key={s.index} className="slot-option" onClick={() => commit(pending.player, s.index)}>
+                    <strong>{s.slot}</strong>
+                    {config.showRatings
+                      ? <span>{ratingInSlot(pending.player, s.slot, config.lens)}</span>
+                      : <small>rating hidden</small>}
+                  </button>
+                ))}
+            </div>
+            <button className="btn btn-block" style={{ marginTop: 14 }} onClick={() => setPending(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ratingClass(rating: number, show: boolean): string {
+  if (!show) return "ovr hidden-rating";
+  if (rating >= 87) return "ovr elite";
+  if (rating >= 80) return "ovr great";
+  return "ovr";
+}
