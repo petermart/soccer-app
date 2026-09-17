@@ -1,159 +1,168 @@
 /**
- * Optional layers on top of the league season: a manager who tilts your
- * side one way or another, a January gamble, and a European knockout run.
+ * Optional layers on top of the league season: a manager you roll for, who
+ * tilts how your side plays, and a January window you can gamble on.
  */
-import { LEAGUES, type LeagueId } from "./leagues.ts";
+import { canPlaySlot, rateTeam, ratingInSlot, type Pick, type RatingLens } from "./ratings.ts";
 import { Rng } from "./rng.ts";
-import type { TeamRating } from "./ratings.ts";
-import type { ClubSeason } from "./types.ts";
-import { MODEL } from "./simulate.ts";
+import type { MatchStyle } from "./simulate.ts";
+import type { ClubSeason, PlayerSeason } from "./types.ts";
 
-export interface Gaffer {
+export interface Gaffer extends MatchStyle {
   id: string;
   name: string;
   style: string;
   blurb: string;
-  attack: number;
-  defence: number;
 }
 
-/** Archetypes rather than real managers, so nobody's likeness is used. */
+/**
+ * Archetypes rather than real managers, so nobody's likeness is used.
+ *
+ * `attack` and `defence` are rating points and `tempo` scales the goals in
+ * your games at both ends. One rating point is worth about 6% more (or fewer)
+ * goals, so the most any gaffer adds net is one point: they change the
+ * character of a season far more than its outcome.
+ */
 export const GAFFERS: Gaffer[] = [
-  { id: "professor", name: "The Professor", style: "Possession", blurb: "Keeps the ball, strangles the game.", attack: 1.04, defence: 1.03 },
-  { id: "sergeant", name: "The Sergeant", style: "Low block", blurb: "Concede the ball, never the goal.", attack: 0.94, defence: 1.1 },
-  { id: "firestarter", name: "The Firestarter", style: "Gegenpress", blurb: "Full throttle for ninety minutes. Nothing held back.", attack: 1.12, defence: 0.95 },
-  { id: "architect", name: "The Architect", style: "Balanced", blurb: "No weaknesses, no fireworks.", attack: 1.03, defence: 1.05 },
-  { id: "gambler", name: "The Gambler", style: "All-out attack", blurb: "Wins 5-4. Loses 4-5. Never bores you.", attack: 1.18, defence: 0.86 },
-  { id: "caretaker", name: "The Caretaker", style: "None", blurb: "Names the XI, stays out of the way.", attack: 1, defence: 1 },
+  { id: "professor", name: "The Professor", style: "Possession", blurb: "Keeps the ball, strangles the game. Fewer goals at both ends.", attack: 0.5, defence: 0.5, tempo: 0.88 },
+  { id: "sergeant", name: "The Sergeant", style: "Low block", blurb: "Concede the ball, never the goal. Not many scored either.", attack: -2, defence: 2.5, tempo: 0.85 },
+  { id: "firestarter", name: "The Firestarter", style: "Gegenpress", blurb: "Full throttle for ninety minutes. Leaves space behind.", attack: 1.5, defence: -1, tempo: 1.08 },
+  { id: "architect", name: "The Architect", style: "Balanced", blurb: "No weaknesses, no fireworks.", attack: 0.5, defence: 0.5, tempo: 0.96 },
+  { id: "gambler", name: "The Gambler", style: "All-out attack", blurb: "Wins 4-3. Loses 3-4. Never bores you.", attack: 2, defence: -2.5, tempo: 1.18 },
+  { id: "caretaker", name: "The Caretaker", style: "Hands-off", blurb: "Names the XI, stays out of the way.", attack: 0, defence: 0, tempo: 1 },
 ];
 
-export interface JanuaryEvent {
+/** The manager you get is rolled, not chosen. Same seed, same gaffer. */
+export function rollGaffer(seed: string): Gaffer {
+  return new Rng(`${seed}:gaffer`).pick(GAFFERS);
+}
+
+// ------------------------------------------------------------------ January
+
+export type JanuaryTone = "good" | "bad" | "neutral";
+
+export interface JanuaryMove {
+  slotIndex: number;
+  out: Pick;
+  in: Pick;
+  reason: string;
+}
+
+export interface JanuaryOutcome {
   id: string;
   title: string;
   text: string;
-  attack: number;
-  defence: number;
-  /** Relative likelihood of being drawn. */
+  tone: JanuaryTone;
+  moves: JanuaryMove[];
+  /** Your XI for the second half. Equal to the input when nothing happened. */
+  picks: Pick[];
+}
+
+interface JanuaryCard {
+  id: string;
+  title: string;
+  text: string;
+  tone: JanuaryTone;
   weight: number;
+  /** How many players leave. */
+  count: number;
+  /** Who goes: the weakest, the best, or anyone. */
+  target: "weakest" | "best" | "random";
+  /** Rating change for the replacement, relative to who left: [min, max]. */
+  delta: [number, number];
+  reason: string;
 }
-
-/** Half the deck helps, half hurts. No undo, by design. */
-export const JANUARY_EVENTS: JanuaryEvent[] = [
-  { id: "wonderkid", title: "Wonderkid arrives", text: "A teenager nobody had heard of walks straight into the XI.", attack: 1.07, defence: 1, weight: 3 },
-  { id: "marquee", title: "Marquee signing", text: "The board finally opens the cheque book.", attack: 1.09, defence: 1.02, weight: 2 },
-  { id: "rock", title: "Defensive rock signed", text: "A proper old-fashioned centre half.", attack: 1, defence: 1.08, weight: 3 },
-  { id: "keeper", title: "Keeper finds form", text: "Suddenly he is saving everything.", attack: 1, defence: 1.06, weight: 3 },
-  { id: "acl", title: "Star man injured", text: "Out for the season. The physio would not look up.", attack: 0.9, defence: 0.97, weight: 3 },
-  { id: "bust-up", title: "Dressing-room bust-up", text: "Two senior players, one training-ground argument.", attack: 0.95, defence: 0.94, weight: 3 },
-  { id: "fixture-pileup", title: "Fixture pile-up", text: "Three games a week until March. Legs are going.", attack: 0.96, defence: 0.95, weight: 2 },
-  { id: "nothing", title: "A quiet window", text: "Deadline day came and went. Nothing happened.", attack: 1, defence: 1, weight: 4 },
-  { id: "talisman-sold", title: "Talisman sold", text: "The bid was too big to turn down.", attack: 0.87, defence: 1, weight: 2 },
-  { id: "system-clicks", title: "The system clicks", text: "Something finally makes sense out there.", attack: 1.06, defence: 1.05, weight: 2 },
-];
-
-export function drawJanuaryEvent(seed: string): JanuaryEvent {
-  const rng = new Rng(`${seed}:january`);
-  return rng.weighted(JANUARY_EVENTS, (e) => e.weight);
-}
-
-export interface CupTie {
-  round: string;
-  opponent: string;
-  opponentSeason: string;
-  legs: { yourGoals: number; theirGoals: number }[];
-  yourAggregate: number;
-  theirAggregate: number;
-  won: boolean;
-  /** Set when the tie was level and went to penalties. */
-  penalties?: { you: number; them: number };
-}
-
-export interface CupRun {
-  name: string;
-  ties: CupTie[];
-  /** "Winners", "Final", "Semi-final", ... or "Did not qualify". */
-  finish: string;
-  won: boolean;
-  qualified: boolean;
-}
-
-const CUP_ROUNDS = ["Round of 16", "Quarter-final", "Semi-final", "Final"];
 
 /**
- * European nights. Finish high enough and your XI plays the best of the
- * other four leagues over two legs, with a one-legged final.
+ * The deck. Every card that changes the XI brings in a real player-season
+ * from this league's archive who can genuinely play the vacated slot. Roughly
+ * half the weight helps and half hurts, so rolling is a real gamble.
  */
-export function simulateCup(opts: {
-  rating: TeamRating;
-  league: LeagueId;
-  leaguePosition: number;
-  /** Elite club-seasons from every league, used as continental opposition. */
-  continental: ClubSeason[];
+export const JANUARY_CARDS: JanuaryCard[] = [
+  { id: "marquee", title: "Marquee signing", text: "The board finally opens the cheque book for your weakest position.", tone: "good", weight: 2, count: 1, target: "weakest", delta: [4, 10], reason: "Replaced by a marquee signing" },
+  { id: "upgrade", title: "Shrewd upgrade", text: "A better option comes up late on deadline day.", tone: "good", weight: 3, count: 1, target: "random", delta: [2, 6], reason: "Upgraded on deadline day" },
+  { id: "double", title: "Double swoop", text: "Two new faces walk straight into the XI.", tone: "good", weight: 1, count: 2, target: "random", delta: [1, 5], reason: "Replaced in a double swoop" },
+  { id: "swap", title: "Player-plus-player swap", text: "A like-for-like deal with a rival club.", tone: "neutral", weight: 3, count: 1, target: "random", delta: [-2, 2], reason: "Swapped like-for-like" },
+  { id: "quiet", title: "A quiet window", text: "Deadline day came and went. Nothing happened.", tone: "neutral", weight: 2, count: 0, target: "random", delta: [0, 0], reason: "" },
+  { id: "sold", title: "Star man sold", text: "The bid for your best player was too big to turn down.", tone: "bad", weight: 2, count: 1, target: "best", delta: [-10, -5], reason: "Sold — the bid was too big" },
+  { id: "injury", title: "Season-ending injury", text: "Out for the season. The physio would not look up.", tone: "bad", weight: 3, count: 1, target: "random", delta: [-9, -4], reason: "Injured for the season" },
+  { id: "crisis", title: "Injury crisis", text: "Two players down in the same week. The kids have to step up.", tone: "bad", weight: 1, count: 2, target: "random", delta: [-7, -3], reason: "Injured, backup comes in" },
+];
+
+export interface JanuaryOptions {
+  picks: Pick[];
+  pool: ClubSeason[];
+  lens: RatingLens;
+  seasonRange: [string, string];
   seed: string;
-  attackModifier?: number;
-  defenceModifier?: number;
-}): CupRun {
-  const qualifySpots = 7;
-  if (opts.leaguePosition > qualifySpots) {
-    return { name: "European Nights", ties: [], finish: "Did not qualify", won: false, qualified: false };
-  }
-
-  const rng = new Rng(`${opts.seed}:cup`);
-  const attack = opts.rating.attack * (opts.attackModifier ?? 1);
-  const defence = opts.rating.defence * (opts.defenceModifier ?? 1);
-
-  // Continental opposition is drawn from the strongest sides on the continent.
-  const pool = [...opts.continental]
-    .sort((a, b) => b.rating - a.rating)
-    .slice(0, 60);
-
-  const ties: CupTie[] = [];
-  let alive = true;
-
-  for (const round of CUP_ROUNDS) {
-    if (!alive) break;
-    const opp = rng.pick(pool);
-    const oneLeg = round === "Final";
-    const legs: CupTie["legs"] = [];
-
-    for (let leg = 0; leg < (oneLeg ? 1 : 2); leg++) {
-      // Neutral venue for the final, otherwise alternate home and away.
-      const venue = oneLeg ? 1 : leg === 0 ? MODEL.homeAdvantage : MODEL.awayPenalty;
-      const oppVenue = oneLeg ? 1 : leg === 0 ? MODEL.awayPenalty : MODEL.homeAdvantage;
-      const base = LEAGUES[opts.league].avgGoals;
-      const xgYou = clamp(base * Math.exp(MODEL.goalSensitivity * ((attack - opp.defence) / 10)) * venue);
-      const xgThem = clamp(base * Math.exp(MODEL.goalSensitivity * ((opp.attack - defence) / 10)) * oppVenue);
-      legs.push({ yourGoals: rng.poisson(xgYou), theirGoals: rng.poisson(xgThem) });
-    }
-
-    const yourAggregate = legs.reduce((s, l) => s + l.yourGoals, 0);
-    const theirAggregate = legs.reduce((s, l) => s + l.theirGoals, 0);
-    let won = yourAggregate > theirAggregate;
-    let penalties: CupTie["penalties"];
-    if (yourAggregate === theirAggregate) {
-      // A shootout is close to a coin flip, with a nudge for the better side.
-      const edge = 0.5 + Math.max(-0.12, Math.min(0.12, (attack - opp.attack) / 160));
-      const you = 3 + rng.int(3);
-      const them = rng.next() < edge ? you - 1 : you + 1;
-      penalties = { you: Math.max(you, 0), them: Math.max(them, 0) };
-      won = penalties.you > penalties.them;
-    }
-
-    ties.push({
-      round, opponent: opp.club, opponentSeason: opp.season,
-      legs, yourAggregate, theirAggregate, won, penalties,
-    });
-    alive = won;
-  }
-
-  const lastTie = ties.at(-1);
-  const finish = !lastTie
-    ? "Did not qualify"
-    : lastTie.won && lastTie.round === "Final"
-      ? "Winners"
-      : lastTie.round;
-
-  return { name: "European Nights", ties, finish, won: finish === "Winners", qualified: true };
 }
 
-const clamp = (xg: number) => Math.min(MODEL.maxGoals, Math.max(MODEL.minGoals, xg));
+/** Rolls the January window. Deterministic for a given seed and XI. */
+export function rollJanuary(opts: JanuaryOptions): JanuaryOutcome {
+  const rng = new Rng(`${opts.seed}:january`);
+  const card = rng.weighted(JANUARY_CARDS, (c) => c.weight);
+  const quiet = JANUARY_CARDS.find((c) => c.id === "quiet")!;
+
+  const picks = [...opts.picks].sort((a, b) => a.slotIndex - b.slotIndex);
+  const rated = picks.map((p) => ({ pick: p, rating: ratingInSlot(p.player, p.slot, opts.lens) }));
+  const order =
+    card.target === "weakest" ? [...rated].sort((a, b) => a.rating - b.rating)
+    : card.target === "best" ? [...rated].sort((a, b) => b.rating - a.rating)
+    : rng.shuffle(rated);
+
+  const inXi = new Set(picks.map((p) => p.player.pid));
+  const candidates = opts.pool.filter(
+    (cs) => cs.season >= opts.seasonRange[0] && cs.season <= opts.seasonRange[1],
+  );
+
+  const moves: JanuaryMove[] = [];
+  for (const { pick, rating } of order) {
+    if (moves.length >= card.count) break;
+    const replacement = findReplacement(pick, rating, card.delta, candidates, inXi, opts.lens, rng);
+    if (!replacement) continue;
+    inXi.add(replacement.player.pid);
+    moves.push({
+      slotIndex: pick.slotIndex,
+      out: pick,
+      in: {
+        player: replacement.player, slot: pick.slot, slotIndex: pick.slotIndex,
+        club: replacement.club.club, season: replacement.club.season,
+      },
+      reason: card.reason,
+    });
+  }
+
+  // A card that found nobody suitable is, in effect, a quiet window.
+  const played = moves.length > 0 || card.count === 0 ? card : quiet;
+  const next = picks.map((p) => moves.find((m) => m.slotIndex === p.slotIndex)?.in ?? p);
+  return { id: played.id, title: played.title, text: played.text, tone: played.tone, moves, picks: next };
+}
+
+/**
+ * A real player-season who can play the slot, rated inside the wanted band.
+ * The band widens a step at a time if nobody fits, but never flips direction:
+ * a bad card cannot turn into an upgrade.
+ */
+function findReplacement(
+  out: Pick, outRating: number, [lo, hi]: [number, number],
+  pool: ClubSeason[], exclude: Set<number>, lens: RatingLens, rng: Rng,
+): { player: PlayerSeason; club: ClubSeason } | null {
+  const all: { player: PlayerSeason; club: ClubSeason; rating: number }[] = [];
+  for (const club of pool) {
+    for (const player of club.players) {
+      if (exclude.has(player.pid) || !canPlaySlot(player, out.slot)) continue;
+      all.push({ player, club, rating: ratingInSlot(player, out.slot, lens) });
+    }
+  }
+  for (let widen = 0; widen <= 6; widen++) {
+    const min = outRating + (lo > 0 ? lo : lo - widen);
+    const max = Math.min(99, outRating + (hi < 0 ? hi : hi + widen));
+    const fit = all.filter((c) => c.rating >= min && c.rating <= max);
+    if (fit.length) return rng.pick(fit);
+  }
+  return null;
+}
+
+/** Net change in team rating from a January outcome, for the summary line. */
+export function januaryImpact(before: Pick[], after: Pick[], lens: RatingLens): number {
+  return Math.round((rateTeam(after, lens).overall - rateTeam(before, lens).overall) * 10) / 10;
+}

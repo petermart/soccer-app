@@ -8,6 +8,8 @@
 import { inflateArchive } from "../src/engine/archive.ts";
 import { LEAGUES, LEAGUE_ORDER, type LeagueId } from "../src/engine/leagues.ts";
 import { simulateSeason, YOU } from "../src/engine/simulate.ts";
+import { GAFFERS } from "../src/engine/extras.ts";
+import { completedPicks, createDraft, draftPlayer, spin } from "../src/engine/draft.ts";
 import { slotsOf } from "../src/engine/formations.ts";
 import { bestXi } from "../src/engine/bestxi.ts";
 import { canPlaySlot, rateTeam, ratingInSlot, type Pick } from "../src/engine/ratings.ts";
@@ -113,5 +115,72 @@ for (const p of dreamXi(allTime)) {
   console.log(
     `  ${p.slot.padEnd(4)} ${p.player.name.padEnd(22)} ` +
     `${String(ratingInSlot(p.player, p.slot, "season")).padStart(2)}  ${p.club} ${p.season}`,
+  );
+}
+
+/**
+ * 4. What a drafted side actually does, and what the gaffers do to it.
+ *
+ * A manager should change the character of a season, not decide it: if any
+ * archetype swings the title odds by tens of points, or turns 6-0s into a
+ * weekly event, the style numbers in extras.ts have gone wrong again.
+ */
+console.log("\n=== 4. A drafted XI, by gaffer ===\n");
+
+const esp = await load("esp");
+const PLAY_SEASON = esp.seasons.at(-1)!;
+
+/** Drafts the way a decent player does: best available, in their best slot. */
+function botDraft(seed: string): Pick[] {
+  const state = createDraft({
+    league: "esp", playSeason: PLAY_SEASON, formation: "4-3-3", difficulty: "normal",
+    mode: "squad", lens: "season", showRatings: true,
+    seasonRange: [esp.seasons[0]!, esp.seasons.at(-1)!],
+    uniquePlayers: true, seed, teamName: "",
+  });
+  let guard = 0;
+  while (!state.done && guard++ < 200) {
+    const best = spin(state, esp.clubSeasons).choices[0]!;
+    const slot = state.slots
+      .filter((s) => state.picks[s.index] === null && best.slots.includes(s.slot))
+      .sort((a, b) => ratingInSlot(best.player, b.slot, "season") - ratingInSlot(best.player, a.slot, "season"))[0]!;
+    draftPlayer(state, best.player, slot.index);
+  }
+  return completedPicks(state);
+}
+
+const squads = Array.from({ length: 20 }, (_, i) => botDraft(`bot:${i}`));
+const avgRating = squads.reduce((s, p) => s + rateTeam(p, "season").overall, 0) / squads.length;
+const espField = [...esp.clubSeasons.filter((c) => c.season === PLAY_SEASON)].sort((a, b) => b.rating - a.rating);
+console.log(
+  `Spain ${PLAY_SEASON}: ${espField[0]!.club} ${espField[0]!.rating} down to ` +
+  `${espField.at(-1)!.club} ${espField.at(-1)!.rating}. Bot XI averages ${avgRating.toFixed(1)}.\n`,
+);
+
+for (const g of GAFFERS) {
+  let titles = 0, top4 = 0, pts = 0, runs = 0, blowouts = 0, worst = 0;
+  for (const [i, picks] of squads.entries()) {
+    for (let k = 0; k < 4; k++) {
+      const r = simulateSeason({
+        league: "esp", picks, lens: "season", pool: esp.clubSeasons,
+        opponentSeason: PLAY_SEASON, seed: `gaf:${g.id}:${i}:${k}`, style: g,
+      });
+      runs++;
+      if (r.champion) titles++;
+      if (r.you.position <= 4) top4++;
+      pts += r.you.points;
+      for (const m of r.matches) {
+        if (m.homeId !== YOU && m.awayId !== YOU) continue;
+        const gf = m.homeId === YOU ? m.homeGoals : m.awayGoals;
+        if (gf >= 6) blowouts++;
+        worst = Math.max(worst, gf);
+      }
+    }
+  }
+  console.log(
+    `  ${g.name.padEnd(16)} ${(pts / runs).toFixed(0).padStart(3)} pts` +
+    `  title ${((titles / runs) * 100).toFixed(0).padStart(3)}%` +
+    `  top four ${((top4 / runs) * 100).toFixed(0).padStart(3)}%` +
+    `  6+ goals ${(blowouts / runs).toFixed(2)}/season  most ${worst}`,
   );
 }

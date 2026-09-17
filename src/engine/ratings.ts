@@ -40,10 +40,38 @@ function outOfPositionFallback(player: PlayerSeason, slot: Slot): number {
   return Math.max(20, player.overall - 12);
 }
 
-/** True when a player can legally occupy a slot at all (keeper rules only). */
+/**
+ * Formation slots that are one role under two names. EA lists them
+ * inconsistently across editions (FC 24 onwards barely uses CF or the
+ * wing-back labels), so a listed striker may lead the line whichever name the
+ * formation gives it. Wide midfield and wing are NOT merged: EA rates them
+ * differently and so does this game.
+ */
+const SAME_ROLE: Partial<Record<Slot, Slot>> = {
+  ST: "CF", CF: "ST", RB: "RWB", RWB: "RB", LB: "LWB", LWB: "LB",
+};
+
+/**
+ * True when a player can legally occupy a slot: it must be one of their
+ * primary or secondary positions from across their career.
+ */
 export function canPlaySlot(player: PlayerSeason, slot: Slot): boolean {
   const isKeeper = player.positions.includes("GK");
-  return isKeeper === (slot === "GK");
+  if (isKeeper !== (slot === "GK")) return false;
+  const known = player.careerPositions;
+  const alias = SAME_ROLE[slot];
+  return known.includes(slot) || (alias !== undefined && known.includes(alias));
+}
+
+/** Every formation-slot name a listed position covers, e.g. CF -> [CF, ST]. */
+export function slotNamesFor(position: Slot): Slot[] {
+  const alias = SAME_ROLE[position];
+  return alias ? [position, alias] : [position];
+}
+
+/** The formation-slot names a player can be dropped into. */
+export function playableSlots(player: PlayerSeason): Slot[] {
+  return [...new Set(player.careerPositions.flatMap(slotNamesFor))];
 }
 
 export interface TeamRating {

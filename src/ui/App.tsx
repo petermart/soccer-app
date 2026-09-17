@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DraftConfig } from "../engine/draft.ts";
-import { GAFFERS, type Gaffer } from "../engine/extras.ts";
+import { GAFFERS, rollGaffer, type Gaffer } from "../engine/extras.ts";
 import { LEAGUES } from "../engine/leagues.ts";
 import type { Pick } from "../engine/ratings.ts";
 import { Draft } from "./Draft.tsx";
-import { Result } from "./Result.tsx";
+import { Season } from "./Season.tsx";
 import { Setup } from "./Setup.tsx";
 import { useLeagueSummaries, usePool } from "./useArchive.ts";
 
@@ -12,13 +12,12 @@ type Screen =
   | { at: "home" }
   | { at: "draft"; config: DraftConfig }
   | { at: "gaffer"; config: DraftConfig; picks: Pick[] }
-  | { at: "result"; config: DraftConfig; picks: Pick[]; gaffer: Gaffer | null; runSeed: string };
+  | { at: "season"; config: DraftConfig; picks: Pick[]; gaffer: Gaffer | null; runSeed: string };
 
 export function App() {
   const { leagues, error } = useLeagueSummaries();
   const [screen, setScreen] = useState<Screen>({ at: "home" });
-  const [useEurope, setUseEurope] = useState(true);
-  const [useJanuary, setUseJanuary] = useState(false);
+  const [useJanuary, setUseJanuary] = useState(true);
   const [useGaffers, setUseGaffers] = useState(true);
 
   const { pool, loading } = usePool(screen.at === "home" ? null : screen.config.league);
@@ -80,17 +79,13 @@ export function App() {
             <div className="field" style={{ marginBottom: 0 }}>
               <span className="field-label">Advanced</span>
               <div className="chip-grid">
-                <button className="chip chip-tall" aria-pressed={useGaffers} onClick={() => setUseGaffers(!useGaffers)}>
+                <button className="chip chip-tall" aria-pressed={useGaffers} onClick={() => setUseGaffers(!useGaffers)} data-testid="toggle-gaffers">
                   <strong>Gaffers {useGaffers ? "on" : "off"}</strong>
-                  <small>Appoint a manager after the draft. Their style shifts your side.</small>
+                  <small>Roll for a manager after the draft. Their style tilts how your side plays.</small>
                 </button>
-                <button className="chip chip-tall" aria-pressed={useEurope} onClick={() => setUseEurope(!useEurope)}>
-                  <strong>European nights {useEurope ? "on" : "off"}</strong>
-                  <small>Finish in the top seven and your XI plays on in Europe.</small>
-                </button>
-                <button className="chip chip-tall" aria-pressed={useJanuary} onClick={() => setUseJanuary(!useJanuary)}>
+                <button className="chip chip-tall" aria-pressed={useJanuary} onClick={() => setUseJanuary(!useJanuary)} data-testid="toggle-january">
                   <strong>January window {useJanuary ? "on" : "off"}</strong>
-                  <small>One gamble at halfway. It can help or hurt. No undo.</small>
+                  <small>At halfway, choose whether to roll for a transfer. Players can come in or go out.</small>
                 </button>
               </div>
             </div>
@@ -99,9 +94,9 @@ export function App() {
           <div className="how">
             {[
               ["1", "Spin the wheel", "Each spin lands on a real club from a real season of your chosen league."],
-              ["2", "Draft a player", "Take one player from that squad and slot them into your formation."],
-              ["3", "Build your XI", "Repeat until all eleven positions are filled. Nobody can be picked twice."],
-              ["4", "Play the season", "Take the weakest club's place in a real season and simulate every game."],
+              ["2", "Draft a player", "Take one player from that squad and slot them into a position they really play."],
+              ["3", "Build your XI", "Repeat until all eleven positions are filled. Move players around to make room."],
+              ["4", "Play the season", "Take the weakest club's place in a real season and watch every matchday."],
             ].map(([n, title, body]) => (
               <div key={n}>
                 <b>{n}</b>
@@ -134,56 +129,30 @@ export function App() {
             setScreen(
               useGaffers
                 ? { at: "gaffer", config: screen.config, picks }
-                : { at: "result", config: screen.config, picks, gaffer: null, runSeed: screen.config.seed },
+                : { at: "season", config: screen.config, picks, gaffer: null, runSeed: screen.config.seed },
             )
           }
         />
       )}
 
       {screen.at === "gaffer" && (
-        <div className="panel">
-          <div className="eyebrow" style={{ textAlign: "center" }}>Your XI is complete</div>
-          <h2 style={{ fontFamily: "var(--display)", fontSize: 40, textAlign: "center", margin: "0 0 6px", textTransform: "uppercase" }}>
-            Appoint a gaffer
-          </h2>
-          <p className="field-note" style={{ textAlign: "center", marginBottom: 22 }}>
-            Their style nudges how your side plays across the whole season. Choose carefully.
-          </p>
-          <div className="chip-grid">
-            {GAFFERS.map((g) => (
-              <button
-                key={g.id}
-                className="chip chip-tall"
-                onClick={() =>
-                  setScreen({
-                    at: "result", config: screen.config, picks: screen.picks,
-                    gaffer: g, runSeed: screen.config.seed,
-                  })
-                }
-              >
-                <strong>{g.name}</strong>
-                <small>{g.style} · {g.blurb}</small>
-                <small style={{ color: "var(--accent)" }}>
-                  ATT {fmt(g.attack)} · DEF {fmt(g.defence)}
-                </small>
-              </button>
-            ))}
-          </div>
-        </div>
+        <GafferRoll
+          seed={screen.config.seed}
+          onDone={(gaffer) =>
+            setScreen({ at: "season", config: screen.config, picks: screen.picks, gaffer, runSeed: screen.config.seed })
+          }
+        />
       )}
 
-      {screen.at === "result" && pool && !loading && (
-        <Result
+      {screen.at === "season" && pool && !loading && (
+        <Season
+          key={screen.runSeed}
           picks={screen.picks}
           pool={pool}
-          league={screen.config.league}
-          playSeason={screen.config.playSeason}
-          lens={screen.config.lens}
+          config={screen.config}
           seed={screen.runSeed}
-          teamName={screen.config.teamName}
           gaffer={screen.gaffer}
           useJanuary={useJanuary}
-          useEurope={useEurope}
           onRestart={() => setScreen({ at: "home" })}
           onReplay={() =>
             setScreen({ ...screen, runSeed: `${screen.config.seed}:${Math.floor(Math.random() * 1e9)}` })
@@ -194,4 +163,64 @@ export function App() {
   );
 }
 
-const fmt = (v: number) => `${v >= 1 ? "+" : ""}${Math.round((v - 1) * 100)}%`;
+/** Rolls for a manager. You get who you get. */
+function GafferRoll({ seed, onDone }: { seed: string; onDone: (g: Gaffer) => void }) {
+  const [rolling, setRolling] = useState(false);
+  const [reel, setReel] = useState<string | null>(null);
+  const [gaffer, setGaffer] = useState<Gaffer | null>(null);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
+
+  const roll = () => {
+    setRolling(true);
+    let i = 0;
+    timer.current = setInterval(() => setReel(GAFFERS[i++ % GAFFERS.length]!.name), 80);
+    setTimeout(() => {
+      if (timer.current) clearInterval(timer.current);
+      setRolling(false);
+      setReel(null);
+      setGaffer(rollGaffer(seed));
+    }, 1100);
+  };
+
+  return (
+    <div className="panel gaffer-panel" data-testid="gaffer-panel">
+      <div className="eyebrow" style={{ textAlign: "center" }}>Your XI is complete</div>
+      <h2 className="panel-title">Roll for a gaffer</h2>
+      <p className="field-note" style={{ textAlign: "center", marginBottom: 22 }}>
+        The board appoints the manager, not you. Their style tilts how your side plays all season —
+        some shut games down, some throw caution to the wind.
+      </p>
+
+      <div className="spin-stage">
+        <div className={`reel${rolling ? " spinning" : ""}`} data-testid="gaffer-name">
+          {reel ?? gaffer?.name ?? "? ? ?"}
+        </div>
+        {gaffer && (
+          <div className="gaffer-reveal">
+            <strong>{gaffer.style}</strong>
+            <p>{gaffer.blurb}</p>
+            <p className="gaffer-effect">{describeStyle(gaffer)}</p>
+          </div>
+        )}
+        {!gaffer ? (
+          <button className="btn btn-primary btn-lg" onClick={roll} disabled={rolling} data-testid="roll-gaffer">
+            {rolling ? "Rolling…" : "Roll the dice"}
+          </button>
+        ) : (
+          <button className="btn btn-primary btn-lg" onClick={() => onDone(gaffer)} data-testid="kick-off">
+            Kick off the season →
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function describeStyle(g: Gaffer): string {
+  const pts = (v: number) => (v === 0 ? "±0" : `${v > 0 ? "+" : "−"}${Math.abs(v)}`);
+  const tempo = Math.round((g.tempo - 1) * 100);
+  const tempoText = tempo === 0 ? "normal tempo" : tempo > 0 ? `${tempo}% more goals in your games` : `${-tempo}% fewer goals in your games`;
+  return `Attack ${pts(g.attack)} · Defence ${pts(g.defence)} · ${tempoText}`;
+}

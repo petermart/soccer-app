@@ -144,6 +144,58 @@ export function choicesFor(s: DraftState, club: ClubSeason): SpinOutcome["choice
     .sort((a, b) => b.bestRating - a.bestRating);
 }
 
+/**
+ * Players from a club who fit this formation but only in slots that are
+ * already filled. Moving someone out of the way would free a place for them.
+ */
+export function blockedFor(s: DraftState, club: ClubSeason): { player: PlayerSeason; slots: Slot[] }[] {
+  const used = usedPlayerIds(s);
+  const takeable = new Set(choicesFor(s, club).map((c) => c.player.pid));
+  const filled = s.slots.filter((slot) => s.picks[slot.index] !== null);
+  return club.players
+    .filter((p) => !takeable.has(p.pid) && (!s.config.uniquePlayers || !used.has(p.pid)))
+    .map((player) => ({
+      player,
+      slots: [...new Set(filled.filter((f) => canPlaySlot(player, f.slot)).map((f) => f.slot))],
+    }))
+    .filter((b) => b.slots.length > 0);
+}
+
+/**
+ * Where an already-drafted player could go instead: any empty slot they can
+ * play, or a filled slot whose occupant can play theirs in return.
+ */
+export function moveTargets(s: DraftState, fromIndex: number): number[] {
+  const pick = s.picks[fromIndex];
+  if (!pick) return [];
+  const from = s.slots[fromIndex]!;
+  return s.slots
+    .filter((to) => {
+      if (to.index === fromIndex || !canPlaySlot(pick.player, to.slot)) return false;
+      const other = s.picks[to.index];
+      return !other || canPlaySlot(other.player, from.slot);
+    })
+    .map((to) => to.index);
+}
+
+/** Moves a drafted player to another slot, swapping if it is occupied. */
+export function movePick(s: DraftState, fromIndex: number, toIndex: number): DraftState {
+  if (!moveTargets(s, fromIndex).includes(toIndex)) {
+    const who = s.picks[fromIndex]?.player.name ?? "Nobody";
+    throw new Error(`${who} cannot move to ${s.slots[toIndex]?.slot ?? "that slot"}`);
+  }
+  const moving = s.picks[fromIndex]!;
+  const other = s.picks[toIndex];
+  s.picks[toIndex] = { ...moving, slot: s.slots[toIndex]!.slot, slotIndex: toIndex };
+  s.picks[fromIndex] = other
+    ? { ...other, slot: s.slots[fromIndex]!.slot, slotIndex: fromIndex }
+    : null;
+  // Position-first: a target that just got filled is no longer a target.
+  if (s.targetSlotIndex !== null && s.picks[s.targetSlotIndex]) s.targetSlotIndex = null;
+  s.done = isComplete(s);
+  return s;
+}
+
 /** Spends a reroll to spin again. Returns null when none are left. */
 export function reroll(s: DraftState, pool: ClubSeason[]): SpinOutcome | null {
   if (s.rerollsLeft <= 0) return null;

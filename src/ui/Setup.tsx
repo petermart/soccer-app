@@ -9,6 +9,17 @@ import type { LeagueSummary } from "./useArchive.ts";
 /** Games each club plays when a league runs this many teams. */
 const gamesFor = (teams: number) => 2 * (teams - 1);
 
+/**
+ * A run code can be supplied as ?seed=CODE, which makes a whole run — spins,
+ * gaffer, January, every scoreline — reproducible from the URL. It is also
+ * what the end-to-end tests drive the game with.
+ */
+function seedFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const seed = new URLSearchParams(window.location.search).get("seed");
+  return seed && seed.trim() ? seed.trim() : null;
+}
+
 export interface SetupProps {
   leagues: LeagueSummary[];
   onStart: (config: DraftConfig) => void;
@@ -30,10 +41,13 @@ export function Setup({ leagues, onStart }: SetupProps) {
   const seasons = summary?.seasonList ?? [];
 
   // The competition defaults to the most recent season in the archive, and the
-  // era range defaults to everything.
+  // era defaults to that same season, so every player is rated in one game
+  // under one set of rules. Widen it and the all-time draft is still there:
+  // until a slider is touched the era follows whichever season you pick.
   const latest = seasons[seasons.length - 1] ?? null;
   const season = playSeason && seasons.includes(playSeason) ? playSeason : latest;
-  const [from, to] = range ?? [0, Math.max(0, seasons.length - 1)];
+  const seasonIdx = season ? Math.max(0, seasons.indexOf(season)) : Math.max(0, seasons.length - 1);
+  const [from, to] = range ?? [seasonIdx, seasonIdx];
 
   const teamsThatSeason = season ? summary?.shape?.[season] ?? cfg.teams : cfg.teams;
   const games = gamesFor(teamsThatSeason);
@@ -52,7 +66,7 @@ export function Setup({ leagues, onStart }: SetupProps) {
       showRatings: difficulty === "hard" ? false : showRatings,
       seasonRange: [seasons[lo] ?? "", seasons[hi] ?? ""],
       uniquePlayers: true,
-      seed: makeRunCode(new Rng(`${Date.now()}:${Math.random()}`)),
+      seed: seedFromUrl() ?? makeRunCode(new Rng(`${Date.now()}:${Math.random()}`)),
       teamName: teamName.trim(),
     });
   };
@@ -69,6 +83,8 @@ export function Setup({ leagues, onStart }: SetupProps) {
               aria-pressed={picked === l.id}
               style={{ "--pick": l.accent } as React.CSSProperties}
               onClick={() => setPicked(l.id)}
+              data-testid="league-card"
+              data-league={l.id}
             >
               <span className="code">{l.code}</span>
               <strong>{l.country}</strong>
@@ -87,7 +103,7 @@ export function Setup({ leagues, onStart }: SetupProps) {
         <span className="field-label">Season you play</span>
         <div className="chips">
           {[...seasons].reverse().map((s) => (
-            <button key={s} className="chip" aria-pressed={season === s} onClick={() => setPlaySeason(s)}>
+            <button key={s} className="chip" aria-pressed={season === s} onClick={() => setPlaySeason(s)} data-testid="season-chip" data-season={s}>
               {s}
             </button>
           ))}
@@ -104,7 +120,7 @@ export function Setup({ leagues, onStart }: SetupProps) {
         <span className="field-label">Formation</span>
         <div className="chips">
           {Object.keys(FORMATIONS).map((f) => (
-            <button key={f} className="chip" aria-pressed={formation === f} onClick={() => setFormation(f)}>
+            <button key={f} className="chip" aria-pressed={formation === f} onClick={() => setFormation(f)} data-testid="formation-chip" data-formation={f}>
               {f}
             </button>
           ))}
@@ -189,7 +205,7 @@ export function Setup({ leagues, onStart }: SetupProps) {
                placeholder="Your XI" onChange={(e) => setTeamName(e.target.value)} />
       </div>
 
-      <button className="btn btn-primary btn-lg btn-block" onClick={start}>
+      <button className="btn btn-primary btn-lg btn-block" onClick={start} data-testid="start-draft">
         Start draft →
       </button>
     </div>

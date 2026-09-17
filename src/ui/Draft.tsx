@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  choicesFor, completedPicks, createDraft, draftPlayer, eligibleClubSeasons,
-  reroll, spin, type DraftConfig, type DraftState,
+  blockedFor, choicesFor, completedPicks, createDraft, draftPlayer, eligibleClubSeasons,
+  movePick, moveTargets, reroll, spin, type DraftConfig, type DraftState,
 } from "../engine/draft.ts";
 import { LEAGUES } from "../engine/leagues.ts";
-import { rateTeam, ratingInSlot, type Pick } from "../engine/ratings.ts";
+import { playableSlots, rateTeam, ratingInSlot, slotNamesFor, type Pick } from "../engine/ratings.ts";
 import type { ClubSeason, PlayerSeason, Slot } from "../engine/types.ts";
 import { Pitch } from "./Pitch.tsx";
 
@@ -22,6 +22,7 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
   const [spinning, setSpinning] = useState(false);
   const [reelClub, setReelClub] = useState<string | null>(null);
   const [pending, setPending] = useState<{ player: PlayerSeason; slots: Slot[] } | null>(null);
+  const [moving, setMoving] = useState<number | null>(null);
   const [sort, setSort] = useState<Sort>("rating");
   const [error, setError] = useState<string | null>(null);
   const spinTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -33,7 +34,7 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
   const filled = completedPicks(state);
 
   // `state.picks` is mutated in place, so its identity never changes. Key the
-  // memo on a signature of what has actually been drafted.
+  // memo on a signature of who is drafted and where.
   const pickSignature = state.picks.map((p) => (p ? p.player.pid : 0)).join(",");
 
   const eligible = useMemo(
@@ -52,6 +53,7 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
   const doSpin = (fn: () => ReturnType<typeof spin> | null) => {
     if (spinning || eligible.length === 0) return;
     setError(null);
+    setMoving(null);
     setSpinning(true);
 
     const names = eligible.map((c) => c.club);
@@ -75,6 +77,7 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
   };
 
   const choices = state.currentClub ? choicesFor(state, state.currentClub) : [];
+  const blocked = state.currentClub ? blockedFor(state, state.currentClub) : [];
 
   const sorted = useMemo(() => {
     const list = choices.slice();
@@ -84,6 +87,7 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
   }, [choices, sort]);
 
   const take = (player: PlayerSeason, slots: Slot[]) => {
+    setMoving(null);
     const open = state.slots.filter((s) => state.picks[s.index] === null && slots.includes(s.slot));
     if (open.length === 0) return;
     if (open.length === 1) {
@@ -108,16 +112,60 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
     }
   };
 
+  const targets = useMemo(
+    () => (moving === null ? new Set<number>() : new Set(moveTargets(state, moving))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [moving, pickSignature],
+  );
+
+  const onSlotClick = (index: number) => {
+    if (pending) { commit(pending.player, index); return; }
+
+    if (moving !== null) {
+      if (index !== moving && targets.has(index)) {
+        try {
+          movePick(state, moving, index);
+          setError(null);
+        } catch (e) {
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      }
+      setMoving(null);
+      bump();
+      return;
+    }
+
+    if (state.picks[index]) {
+      // Pick a drafted player up so they can be moved somewhere else.
+      if (moveTargets(state, index).length === 0) {
+        setError(`${state.picks[index]!.player.name} has nowhere else they can play right now.`);
+        return;
+      }
+      setError(null);
+      setMoving(index);
+      return;
+    }
+
+    if (config.mode === "position") {
+      state.targetSlotIndex = index;
+      state.currentClub = null;
+      bump();
+    }
+  };
+
   const cfg = LEAGUES[config.league];
   const openCount = state.picks.filter((p) => p === null).length;
 
-  // Slots the pending player could take, for the pitch highlight.
+  // Slots the pending player could take, or where a picked-up player can go.
   const highlight = useMemo(() => {
+    if (moving !== null) return targets;
     if (!pending) return undefined;
     return new Set(
       state.slots.filter((s) => state.picks[s.index] === null && pending.slots.includes(s.slot)).map((s) => s.index),
     );
-  }, [pending, state.slots, state.picks]);
+  }, [pending, moving, targets, state.slots, state.picks]);
+
+  const movingPick = moving !== null ? state.picks[moving] : null;
 
   return (
     <div>
@@ -128,8 +176,8 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
               <i key={s.index} className={state.picks[s.index] ? "on" : ""} />
             ))}
           </div>
-          <div className="meta-line" style={{ marginTop: 8 }}>
-            <b>{config.formation}</b> · {cfg.country} · {openCount} slot{openCount === 1 ? "" : "s"} left
+          <div className="meta-line" style={{ marginTop: 8 }} data-testid="draft-meta">
+            <b>{config.formation}</b> · {cfg.country} · <span data-testid="open-count">{openCount}</span> slot{openCount === 1 ? "" : "s"} left
             {running && <> · rated <b>{running.overall.toFixed(1)}</b></>}
           </div>
         </div>
@@ -140,22 +188,25 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
       </div>
 
       <div className="draft-grid">
-        <Pitch
-          slots={state.slots}
-          picks={state.picks}
-          ratings={ratings}
-          showRatings={config.showRatings}
-          highlight={highlight}
-          targetIndex={state.targetSlotIndex}
-          onSlotClick={(index) => {
-            if (pending) { commit(pending.player, index); return; }
-            if (config.mode === "position" && state.picks[index] === null) {
-              state.targetSlotIndex = index;
-              state.currentClub = null;
-              bump();
-            }
-          }}
-        />
+        <div>
+          <Pitch
+            slots={state.slots}
+            picks={state.picks}
+            ratings={ratings}
+            showRatings={config.showRatings}
+            highlight={highlight}
+            targetIndex={state.targetSlotIndex}
+            movingIndex={moving}
+            onSlotClick={onSlotClick}
+          />
+          <p className="field-note pitch-hint" data-testid="pitch-hint">
+            {movingPick
+              ? <>Moving <b>{movingPick.player.name}</b> — tap a highlighted slot. Filled slots swap. Tap anywhere else to cancel.</>
+              : filled.length > 0
+                ? "Tap a drafted player to move them to another position they play."
+                : "Players can only go where they have played in the games."}
+          </p>
+        </div>
 
         <div>
           {config.mode === "position" && state.targetSlotIndex === null && !state.currentClub ? (
@@ -178,6 +229,7 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
                 className="btn btn-primary btn-lg"
                 disabled={spinning || eligible.length === 0}
                 onClick={() => doSpin(() => spin(state, pool))}
+                data-testid="spin"
               >
                 {spinning ? "Spinning…" : "Spin the wheel"}
               </button>
@@ -188,7 +240,7 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
           ) : (
             <>
               <div className="spin-stage">
-                <div className="reel">
+                <div className="reel" data-testid="current-club">
                   {state.currentClub.club}
                   <span className="reel-season">{state.currentClub.season}</span>
                 </div>
@@ -219,46 +271,70 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
                   </div>
                 </div>
 
-                <div className="player-list">
+                <div className="player-list" data-testid="player-list">
                   {sorted.map(({ player, slots, bestRating }) => (
                     <button
                       key={player.pid}
                       className="player-row"
                       onClick={() => take(player, slots)}
+                      data-testid="player-choice"
+                      data-pid={player.pid}
+                      data-fits={slots.join(",")}
+                      data-positions={playableSlots(player).join(",")}
                     >
                       <span className={ratingClass(bestRating, config.showRatings)}>
                         {config.showRatings ? bestRating : "?"}
                       </span>
                       <span className="player-main">
                         <strong>{player.name}</strong>
-                        <small>{player.nation} · {player.age}</small>
+                        <small>{subline(player)}</small>
                       </span>
-                      <span className="pos-tags">
-                        {player.positions.slice(0, 3).map((p) => (
-                          <span key={p} className={`pos-tag${slots.includes(p) ? " fit" : ""}`}>{p}</span>
-                        ))}
-                      </span>
+                      <PositionTags player={player} fits={slots} />
                     </button>
                   ))}
+
+                  {blocked.length > 0 && (
+                    <>
+                      <div className="list-divider">
+                        Position taken — move someone to make room
+                      </div>
+                      {blocked.map(({ player, slots }) => (
+                        <div
+                          key={player.pid}
+                          className="player-row blocked"
+                          data-testid="player-blocked"
+                          data-pid={player.pid}
+                          data-blocked-by={slots.join(",")}
+                        >
+                          <span className={ratingClass(0, false)}>–</span>
+                          <span className="player-main">
+                            <strong>{player.name}</strong>
+                            <small>{slots.join(" / ")} already filled · {subline(player)}</small>
+                          </span>
+                          <PositionTags player={player} fits={[]} />
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
               </div>
             </>
           )}
 
-          {error && <p className="field-note" style={{ color: "var(--bad)" }}>{error}</p>}
+          {error && <p className="field-note" style={{ color: "var(--bad)" }} data-testid="draft-error">{error}</p>}
         </div>
       </div>
 
       {pending && (
         <div className="modal-backdrop" onClick={() => setPending(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} data-testid="slot-modal">
             <h3>{pending.player.name}</h3>
             <p>Where do they play? Ratings shown are for that slot.</p>
             <div className="slot-options">
               {state.slots
                 .filter((s) => state.picks[s.index] === null && pending.slots.includes(s.slot))
                 .map((s) => (
-                  <button key={s.index} className="slot-option" onClick={() => commit(pending.player, s.index)}>
+                  <button key={s.index} className="slot-option" onClick={() => commit(pending.player, s.index)} data-testid="slot-option">
                     <strong>{s.slot}</strong>
                     {config.showRatings
                       ? <span>{ratingInSlot(pending.player, s.slot, config.lens)}</span>
@@ -273,6 +349,30 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Nation and age, plus the full name when the display name is a nickname. */
+function subline(p: PlayerSeason): string {
+  const parts = [p.nation, String(p.age)];
+  if (p.fullName && p.fullName !== p.name) parts.unshift(p.fullName);
+  return parts.join(" · ");
+}
+
+/** Career positions, with the ones that fit an open slot lit up. */
+function PositionTags({ player, fits }: { player: PlayerSeason; fits: Slot[] }) {
+  return (
+    <span className="pos-tags">
+      {player.careerPositions.map((p, i) => (
+        <span
+          key={p}
+          className={`pos-tag${slotNamesFor(p).some((s) => fits.includes(s)) ? " fit" : ""}${i === 0 ? " primary" : ""}`}
+          title={i === 0 ? "Primary position" : "Secondary position"}
+        >
+          {p}
+        </span>
+      ))}
+    </span>
   );
 }
 

@@ -9,6 +9,7 @@ type PlayerTuple = [
   pid: number, name: string, fullName: string, nation: string, age: number,
   overall: number, prime: number, positions: string,
   slotRatings: number[], face: [number, number, number, number, number, number],
+  careerPositions: string,
 ];
 
 interface RawClubSeason {
@@ -34,6 +35,7 @@ function inflatePlayer(t: PlayerTuple): PlayerSeason {
     overall: t[5],
     prime: t[6],
     positions: t[7].split(",").filter(Boolean) as Slot[],
+    careerPositions: (t[10] || t[7]).split(",").filter(Boolean) as Slot[],
     slotRatings: t[8],
     face: t[9],
   };

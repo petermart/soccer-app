@@ -90,26 +90,81 @@ function parsePositions(raw: string): Slot[] {
 }
 
 // ---------------------------------------------------------------- pass one
-// Career-best overall per player, across every edition and every league, so
-// the "Prime" lens sees a player's true peak even if it happened elsewhere.
+// Career facts per player, across every edition and every league (not just
+// the big five), so a player looks the same whichever club-season you meet:
+//   prime      career-best overall, for the "Prime" lens
+//   name       the name the games most often displayed (the `alias` column,
+//              e.g. "Raphinha" where short_name says "R. Dias")
+//   positions  every position EA listed them at, primary and secondary
 
-console.log("Pass 1: career peaks across 20 editions…");
+console.log("Pass 1: career peaks, names and positions across 20 editions…");
 const primeById = new Map<string, number>();
+const aliasesById = new Map<string, Map<string, { count: number; last: number }>>();
+const positionsById = new Map<string, { editions: number; listed: Map<Slot, number>; primary: Set<Slot> }>();
 
-for (const edition of EDITIONS) {
+for (const [editionIdx, edition] of EDITIONS.entries()) {
   if (!existsSync(edition.file)) continue;
   const t = await readCsv(edition.file);
   const idIdx = t.index("sofifa_id");
   const ovrIdx = t.index("overall");
+  // Older mirrors of the dataset may lack the alias column; fall back to short_name.
+  const aliasIdx = t.header.findIndex((h) => h.trim() === "alias");
+  const posIdx = t.index("positions");
+  const seen = new Set<string>();
   for (const r of t.rows) {
     const id = r[idIdx]?.trim();
     const ovr = Number(r[ovrIdx]);
     if (!id || !Number.isFinite(ovr)) continue;
     const cur = primeById.get(id);
     if (cur === undefined || ovr > cur) primeById.set(id, ovr);
+
+    // A player can appear twice in one edition (mid-season roster updates);
+    // count each edition once.
+    if (seen.has(id)) continue;
+    seen.add(id);
+
+    const alias = aliasIdx >= 0 ? (r[aliasIdx] ?? "").trim() : "";
+    if (alias) {
+      const names = aliasesById.get(id) ?? aliasesById.set(id, new Map()).get(id)!;
+      const n = names.get(alias) ?? { count: 0, last: 0 };
+      names.set(alias, { count: n.count + 1, last: editionIdx });
+    }
+
+    const listed = parsePositions(r[posIdx] ?? "");
+    if (listed.length) {
+      const p = positionsById.get(id) ?? positionsById.set(id, { editions: 0, listed: new Map(), primary: new Set() }).get(id)!;
+      p.editions++;
+      p.primary.add(listed[0]!);
+      for (const slot of listed) p.listed.set(slot, (p.listed.get(slot) ?? 0) + 1);
+    }
   }
 }
 console.log(`  ${primeById.size.toLocaleString()} distinct players seen.\n`);
+
+/** Most common display name; the more recent one wins a tie. */
+function careerName(id: string): string | null {
+  const names = aliasesById.get(id);
+  if (!names) return null;
+  return [...names.entries()]
+    .sort((a, b) => b[1].count - a[1].count || b[1].last - a[1].last)[0]![0];
+}
+
+/**
+ * Primary and secondary positions over a career, most listed first.
+ *
+ * A position counts if it was ever their first-listed (primary) position, or
+ * was listed in at least two editions. A one-off secondary listing across a
+ * long career is treated as noise; for players with only one or two editions,
+ * everything listed counts.
+ */
+function careerPositions(id: string, fallback: Slot[]): Slot[] {
+  const p = positionsById.get(id);
+  if (!p) return fallback;
+  return [...p.listed.entries()]
+    .filter(([slot, n]) => p.primary.has(slot) || n >= 2 || p.editions <= 2)
+    .sort((a, b) => b[1] - a[1] || Number(p.primary.has(b[0])) - Number(p.primary.has(a[0])))
+    .map(([slot]) => slot);
+}
 
 // ---------------------------------------------------------------- pass two
 
@@ -199,15 +254,24 @@ for (const edition of EDITIONS) {
     const short = (r[C.name] ?? "").trim();
     const long = (r[C.longName] ?? "").trim();
 
+    // This season's own listing always counts — the noise filter is only there
+    // to stop a long career accumulating positions from single stray listings,
+    // and a player plainly played where the game listed them that year.
+    // Keepers stay keepers and outfielders stay outfield either way.
+    // Career order first, so the most-played position stays the primary one.
+    const career = [...new Set([...careerPositions(id, positions), ...positions])]
+      .filter((s) => (s === "GK") === isKeeper);
+
     (squads.get(club) ?? squads.set(club, []).get(club)!).push({
       pid: Number(id) || 0,
-      name: short || long,
+      name: careerName(id) || short || long,
       fullName: long || short,
       nation: (r[C.nation] ?? "").trim(),
       age: Number(r[C.age]) || 0,
       overall,
       prime: Math.max(overall, primeById.get(id) ?? overall),
       positions,
+      careerPositions: career.length ? career : positions,
       slotRatings: deriveSlotRatings(attrs, overall, isKeeper),
       face,
     });
@@ -252,6 +316,7 @@ for (const edition of EDITIONS) {
         players: sorted.map((p) => [
           p.pid, p.name, p.fullName === p.name ? "" : p.fullName, p.nation, p.age,
           p.overall, p.prime, p.positions.join(","), p.slotRatings, p.face,
+          p.careerPositions.join(","),
         ]),
       });
     }

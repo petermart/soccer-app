@@ -36,8 +36,13 @@ export interface PlayerSeason {
   overall: number;
   /** Career-best overall anywhere in the archive ("Prime" lens). */
   prime: number;
-  /** Positions the game listed them at, e.g. ["CF","ST"]. */
+  /** Positions that season's game listed them at, e.g. ["CF","ST"]. */
   positions: Slot[];
+  /**
+   * Primary and secondary positions across every FIFA / EA FC edition, most
+   * common first. This, not the single season, decides where they may play.
+   */
+  careerPositions: Slot[];
   /** Per-slot rating, index-aligned with SLOTS. 0 means unusable there. */
   slotRatings: number[];
   /** pace, shooting, passing, dribbling, defending, physical. */
