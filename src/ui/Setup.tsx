@@ -6,6 +6,7 @@ import type { Difficulty, DraftConfig, DraftMode } from "../engine/draft.ts";
 import type { RatingLens } from "../engine/ratings.ts";
 import type { LeagueSummary } from "./useArchive.ts";
 import type { Settings } from "./useSettings.ts";
+import { Flag } from "./icons.tsx";
 
 /** Games each club plays when a league runs this many teams. */
 const gamesFor = (teams: number) => 2 * (teams - 1);
@@ -100,7 +101,10 @@ export function Setup({ leagues, settings, onChange, onReset, onStart }: SetupPr
               data-testid="league-card"
               data-league={l.id}
             >
-              <span className="code">{l.code}</span>
+              <span className="league-id">
+                <Flag league={l.id} />
+                <span className="code">{l.code}</span>
+              </span>
               <strong>{l.country}</strong>
               <small>{l.clubSeasons} club-seasons</small>
               <small>{l.firstSeason}–{l.lastSeason}</small>

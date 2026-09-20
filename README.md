@@ -114,6 +114,17 @@ differently, and so does this.
 | Gaffers | Roll for a manager archetype that tilts how the side plays |
 | January window | At halfway, choose whether to roll for a transfer |
 
+### Rolls and spins
+
+Anything decided by chance shows it: the club draw turns a spinning wheel, and the
+gaffer and January rolls tumble a die. Both are deliberately unlabelled — the die has no
+pips and the wheel has no numbered wedges — because what is being rolled is a manager or
+a transfer card, not a value. The outcome is always spelled out in words beside it.
+
+The pitch itself is drawn to regulation proportions — 68m by 105m, with the penalty
+areas, six-yard boxes, penalty spots and arcs all at their real sizes — so where a player
+stands means something.
+
 ### Watching the season
 
 Every result is colour coded — green for a win, yellow for a draw, red for a defeat — on

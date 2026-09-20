@@ -343,7 +343,9 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 
 .pitch {
   position: relative;
-  aspect-ratio: 3 / 4;
+  /* A real pitch is 68m by 105m. Matching it means the markings drawn in
+     Pitch.tsx come out true — most visibly, the centre circle is round. */
+  aspect-ratio: 68 / 105;
   border-radius: var(--radius);
   border: 1px solid #1f3a2a;
   background-color: #12301f;
@@ -354,9 +356,20 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .pitch-lines {
   position: absolute;
   inset: 0;
+  /* An SVG is a replaced element: `inset: 0` alone leaves it at its viewBox
+     aspect, so it sat square inside a tall pitch and the markings never lined
+     up with the players. The explicit size is what makes it stretch. */
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--radius);
   pointer-events: none;
 }
-.pitch-lines rect, .pitch-lines circle, .pitch-lines line { stroke: rgba(255, 255, 255, 0.16); fill: none; stroke-width: 0.4; }
+.pitch-lines rect,
+.pitch-lines ellipse,
+.pitch-lines line,
+.pitch-lines path { stroke: rgba(255, 255, 255, 0.22); fill: none; stroke-width: 0.45; vector-effect: non-scaling-stroke; }
+.pitch-lines .pitch-spot { fill: rgba(255, 255, 255, 0.3); stroke: none; }
 
 /*
  * The button is exactly the badge's height, and the name and club hang below
@@ -381,7 +394,7 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
   position: absolute;
   top: 100%;
   left: 50%;
-  width: 84px;
+  width: 74px;
   transform: translateX(-50%);
   pointer-events: none;
 }
@@ -1169,3 +1182,86 @@ tr.rel td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
   .t-sparks path { animation: none; }
   .trophy { opacity: 1; transform: none; }
 }
+
+/* ---------- flags, die and wheel ---------- */
+
+.league-id { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+.league-id .code { margin-bottom: 0; }
+
+.flag {
+  width: 27px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 2.5px;
+  display: block;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+.flag-edge { fill: none; stroke: rgba(255, 255, 255, 0.28); stroke-width: 0.5; rx: 1.5; }
+
+/* The die: an unmarked cube, because what is being rolled is a manager or a
+   transfer card, not a number. */
+.die { width: 34px; height: 34px; display: block; }
+.die-top   { fill: var(--gold); }
+.die-left  { fill: color-mix(in srgb, var(--gold) 62%, #000); }
+.die-right { fill: color-mix(in srgb, var(--gold) 80%, #000); }
+.die-cube  { transform-origin: 24px 25px; }
+
+.die-motion path {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  opacity: 0;
+}
+
+.die.is-rolling .die-cube { animation: die-tumble 0.55s linear infinite; }
+.die.is-rolling .die-motion path { animation: die-motion 0.55s linear infinite; }
+
+@keyframes die-tumble {
+  0%   { transform: rotate(0deg) scale(1); }
+  25%  { transform: rotate(90deg) scale(0.9); }
+  50%  { transform: rotate(180deg) scale(1.04); }
+  75%  { transform: rotate(270deg) scale(0.9); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+@keyframes die-motion {
+  0%, 100% { opacity: 0; }
+  50%      { opacity: 0.55; }
+}
+
+/* The wheel: unlabelled wedges, since the club that comes up is named beside it. */
+.spin-wheel { width: 38px; height: 38px; display: block; }
+.wheel-face { transform-origin: 24px 24px; }
+.wheel-wedge.w0 { fill: rgba(0, 255, 135, 0.85); }
+.wheel-wedge.w1 { fill: rgba(245, 197, 24, 0.85); }
+.wheel-wedge.w2 { fill: rgba(59, 130, 246, 0.85); }
+.wheel-wedge.w3 { fill: rgba(255, 75, 125, 0.85); }
+.wheel-rim { fill: none; stroke: rgba(255, 255, 255, 0.5); stroke-width: 2; }
+.wheel-hub { fill: #0e1218; stroke: rgba(255, 255, 255, 0.5); stroke-width: 1.5; }
+.wheel-pointer { fill: #fff; }
+
+.spin-wheel.is-spinning .wheel-face { animation: wheel-turn 0.42s linear infinite; }
+@keyframes wheel-turn { to { transform: rotate(360deg); } }
+
+/* Placement: centred above a stage, or inline inside a button. */
+.stage-wheel, .stage-die { margin: 0 auto 8px; }
+.btn-die, .btn-wheel {
+  width: 20px;
+  height: 20px;
+  display: inline-block;
+  vertical-align: -4px;
+  margin-right: 7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .die.is-rolling .die-cube,
+  .die.is-rolling .die-motion path,
+  .spin-wheel.is-spinning .wheel-face { animation: none; }
+}
+
+/* The keeper stands on the goal line, so their name hangs just past the
+   touchline rather than inside it. Labels are allowed out of the pitch box
+   for that reason; flipping the keeper's name upward instead would drop it
+   straight on top of the centre-backs'. */
+.pitch { overflow: visible; }
+.draft-grid .pitch { margin-bottom: 34px; }

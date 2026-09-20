@@ -8,6 +8,7 @@ import { LEAGUES } from "../engine/leagues.ts";
 import { playableSlots, rateTeam, ratingInSlot, slotNamesFor, type Pick } from "../engine/ratings.ts";
 import type { ClubSeason, PlayerSeason, Slot } from "../engine/types.ts";
 import { Pitch } from "./Pitch.tsx";
+import { SpinWheel } from "./icons.tsx";
 
 type Sort = "rating" | "position" | "name";
 
@@ -219,6 +220,7 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
             </div>
           ) : !state.currentClub ? (
             <div className="spin-stage">
+              <SpinWheel spinning={spinning} className="stage-wheel" />
               <div className={`reel${spinning ? " spinning" : ""}`}>
                 {reelClub ?? (
                   state.targetSlotIndex !== null
@@ -241,6 +243,7 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
           ) : (
             <>
               <div className="spin-stage">
+                <SpinWheel spinning={spinning} className="stage-wheel" />
                 <div className="reel" data-testid="current-club">
                   {state.currentClub.club}
                   <span className="reel-season">{state.currentClub.season}</span>

@@ -7,6 +7,7 @@ import { Draft } from "./Draft.tsx";
 import { Season } from "./Season.tsx";
 import { Setup } from "./Setup.tsx";
 import { useLeagueSummaries, usePool } from "./useArchive.ts";
+import { Die } from "./icons.tsx";
 import { useSettings } from "./useSettings.ts";
 
 type Screen =
@@ -199,6 +200,7 @@ function GafferRoll({ seed, onDone }: { seed: string; onDone: (g: Gaffer) => voi
       </p>
 
       <div className="spin-stage">
+        {!gaffer && <Die rolling={rolling} className="stage-die" />}
         <div className={`reel${rolling ? " spinning" : ""}`} data-testid="gaffer-name">
           {reel ?? gaffer?.name ?? "? ? ?"}
         </div>
@@ -211,6 +213,7 @@ function GafferRoll({ seed, onDone }: { seed: string; onDone: (g: Gaffer) => voi
         )}
         {!gaffer ? (
           <button className="btn btn-primary btn-lg" onClick={roll} disabled={rolling} data-testid="roll-gaffer">
+            <Die rolling={rolling} className="btn-die" />
             {rolling ? "Rolling…" : "Roll the dice"}
           </button>
         ) : (

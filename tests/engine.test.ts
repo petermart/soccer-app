@@ -103,6 +103,25 @@ describe("slot sides", () => {
     expect(new Set(mids.map((s) => s.side))).toEqual(new Set(["left", "centre", "right"]));
   });
 
+  test("slots sit inside the pitch, and deep ones need their label flipped", () => {
+    // Pitch.tsx puts a name above the badge below y=14, because the pitch
+    // clips anything hanging past the goal line. Keep formations in a range
+    // where that rule still covers everyone who needs it.
+    const FLIP_BELOW = 14;
+    for (const name of Object.keys(FORMATIONS)) {
+      const slots = slotsOf(name);
+      const keeper = slots.find((s) => s.slot === "GK")!;
+      expect(keeper.coords[1]).toBeLessThan(FLIP_BELOW);
+      for (const s of slots) {
+        expect(s.coords[0]).toBeGreaterThanOrEqual(0);
+        expect(s.coords[0]).toBeLessThanOrEqual(100);
+        expect(s.coords[1]).toBeGreaterThanOrEqual(0);
+        // Nothing may sit so high that a label above it would clip the top.
+        expect(s.coords[1]).toBeLessThanOrEqual(92);
+      }
+    }
+  });
+
   test("every formation labels its slots uniquely", () => {
     for (const name of Object.keys(FORMATIONS)) {
       const labels = slotsOf(name).map((s) => s.label);

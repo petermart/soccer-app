@@ -10,6 +10,7 @@ import {
 import type { ClubSeason } from "../engine/types.ts";
 import { describeStyle } from "./App.tsx";
 import { makePieces, trajectory } from "./confetti.ts";
+import { Die } from "./icons.tsx";
 
 export interface SeasonProps {
   picks: Pick[];
@@ -521,6 +522,18 @@ function LeagueTable({ rows, teams, compact }: { rows: SeasonResult["table"]; te
 }
 
 function JanuaryPrompt({ onRoll, onSkip }: { onRoll: () => void; onSkip: () => void }) {
+  const [rolling, setRolling] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  // Let the die tumble for a beat before the card lands, so the roll reads as
+  // a roll rather than the outcome appearing the instant you commit to it.
+  const roll = () => {
+    if (rolling) return;
+    setRolling(true);
+    timer.current = setTimeout(onRoll, 900);
+  };
+
   return (
     <div className="window-panel" data-testid="january-prompt">
       <div className="eyebrow">Halfway · the January window is open</div>
@@ -530,9 +543,15 @@ function JanuaryPrompt({ onRoll, onSkip }: { onRoll: () => void; onSkip: () => v
         like-for-like swap, your star sold, a season-ending injury. Roughly half the deck helps and
         half hurts. Or keep the XI you have.
       </p>
+      {rolling && <Die rolling className="stage-die" />}
       <div className="actions" style={{ marginTop: 14 }}>
-        <button className="btn btn-primary btn-lg" onClick={onRoll} data-testid="january-roll">🎲 Roll the window</button>
-        <button className="btn btn-lg" onClick={onSkip} data-testid="january-skip">Keep this XI</button>
+        <button className="btn btn-primary btn-lg" onClick={roll} disabled={rolling} data-testid="january-roll">
+          <Die rolling={rolling} className="btn-die" />
+          {rolling ? "Rolling…" : "Roll the window"}
+        </button>
+        <button className="btn btn-lg" onClick={onSkip} disabled={rolling} data-testid="january-skip">
+          Keep this XI
+        </button>
       </div>
     </div>
   );
