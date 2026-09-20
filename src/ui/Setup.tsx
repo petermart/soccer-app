@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { FORMATIONS } from "../engine/formations.ts";
 import { LEAGUES, type LeagueId } from "../engine/leagues.ts";
 import { makeRunCode, Rng } from "../engine/rng.ts";
 import type { Difficulty, DraftConfig, DraftMode } from "../engine/draft.ts";
 import type { RatingLens } from "../engine/ratings.ts";
 import type { LeagueSummary } from "./useArchive.ts";
+import type { Settings } from "./useSettings.ts";
 
 /** Games each club plays when a league runs this many teams. */
 const gamesFor = (teams: number) => 2 * (teams - 1);
@@ -22,32 +23,45 @@ function seedFromUrl(): string | null {
 
 export interface SetupProps {
   leagues: LeagueSummary[];
+  settings: Settings;
+  onChange: (patch: Partial<Settings>) => void;
+  onReset: () => void;
   onStart: (config: DraftConfig) => void;
 }
 
-export function Setup({ leagues, onStart }: SetupProps) {
-  const [picked, setPicked] = useState<LeagueId>("eng");
-  const [playSeason, setPlaySeason] = useState<string | null>(null);
-  const [formation, setFormation] = useState("4-3-3");
-  const [difficulty, setDifficulty] = useState<Difficulty>("normal");
-  const [mode, setMode] = useState<DraftMode>("squad");
-  const [lens, setLens] = useState<RatingLens>("season");
-  const [showRatings, setShowRatings] = useState(true);
-  const [range, setRange] = useState<[number, number] | null>(null);
-  const [teamName, setTeamName] = useState("");
+export function Setup({ leagues, settings, onChange, onReset, onStart }: SetupProps) {
+  // Every choice lives in persisted settings so coming back for another run
+  // lands on the setup you last played, not the defaults.
+  const picked = settings.league;
+  const playSeason = settings.playSeason;
+  const formation = settings.formation;
+  const difficulty = settings.difficulty;
+  const mode = settings.mode;
+  const lens = settings.lens;
+  const showRatings = settings.showRatings;
+  const range = settings.range;
+  const teamName = settings.teamName;
+
+  const setPicked = (league: LeagueId) => onChange({ league });
+  const setPlaySeason = (s: string | null) => onChange({ playSeason: s });
+  const setFormation = (f: string) => onChange({ formation: f });
+  const setDifficulty = (d: Difficulty) => onChange({ difficulty: d });
+  const setMode = (m: DraftMode) => onChange({ mode: m });
+  const setLens = (l: RatingLens) => onChange({ lens: l });
+  const setShowRatings = (v: boolean) => onChange({ showRatings: v });
+  const setRange = (r: [number, number]) => onChange({ range: r });
+  const setTeamName = (t: string) => onChange({ teamName: t });
 
   const cfg = LEAGUES[picked];
   const summary = useMemo(() => leagues.find((l) => l.id === picked), [leagues, picked]);
   const seasons = summary?.seasonList ?? [];
 
-  // The competition defaults to the most recent season in the archive, and the
-  // era defaults to that same season, so every player is rated in one game
-  // under one set of rules. Widen it and the all-time draft is still there:
-  // until a slider is touched the era follows whichever season you pick.
+  // The competition defaults to the most recent season in the archive, but the
+  // era defaults to the whole archive — the point of the game is drafting
+  // across eras, so that is the state you should land on.
   const latest = seasons[seasons.length - 1] ?? null;
   const season = playSeason && seasons.includes(playSeason) ? playSeason : latest;
-  const seasonIdx = season ? Math.max(0, seasons.indexOf(season)) : Math.max(0, seasons.length - 1);
-  const [from, to] = range ?? [seasonIdx, seasonIdx];
+  const [from, to] = range ?? [0, Math.max(0, seasons.length - 1)];
 
   const teamsThatSeason = season ? summary?.shape?.[season] ?? cfg.teams : cfg.teams;
   const games = gamesFor(teamsThatSeason);
@@ -208,6 +222,13 @@ export function Setup({ leagues, onStart }: SetupProps) {
       <button className="btn btn-primary btn-lg btn-block" onClick={start} data-testid="start-draft">
         Start draft →
       </button>
+
+      <p className="field-note setup-memory">
+        Your setup is remembered for next time.{" "}
+        <button className="link-btn" onClick={onReset} data-testid="reset-settings">
+          Reset to defaults
+        </button>
+      </p>
     </div>
   );
 }

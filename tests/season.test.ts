@@ -282,3 +282,57 @@ describe("scorelines stay believable", () => {
     expect(sixPlus / matches).toBeLessThan(0.1);
   });
 });
+
+describe("goal timeline", () => {
+  const picks = bestXi(
+    [...esp.clubSeasons].sort((a, b) => b.strength - a.strength)[0]!.players,
+    "4-3-3", "season",
+  );
+
+  test("both sides' goals carry minutes, and only in your own matches", () => {
+    const r = simulateSeason({
+      league: "esp", picks, lens: "season", pool: esp.clubSeasons,
+      opponentSeason: SEASON, seed: "timeline",
+    });
+
+    let mine = 0;
+    let theirs = 0;
+    for (const m of r.matches) {
+      const yours = m.homeId === YOU || m.awayId === YOU;
+      if (!yours) {
+        expect(m.yourGoals.length).toBe(0);
+        expect(m.oppGoals.length).toBe(0);
+        continue;
+      }
+      const gf = m.homeId === YOU ? m.homeGoals : m.awayGoals;
+      const ga = m.homeId === YOU ? m.awayGoals : m.homeGoals;
+      // Every goal on the scoreline has a minute behind it, both ways.
+      expect(m.yourGoals.length).toBe(gf);
+      expect(m.oppGoals.length).toBe(ga);
+      mine += m.yourGoals.length;
+      theirs += m.oppGoals.length;
+
+      for (const min of m.oppGoals) {
+        expect(min).toBeGreaterThanOrEqual(1);
+        expect(min).toBeLessThanOrEqual(90);
+      }
+      // Minutes are sorted so the timeline renders left to right.
+      expect([...m.oppGoals].sort((a, b) => a - b)).toEqual(m.oppGoals);
+    }
+
+    expect(mine).toBe(r.you.goalsFor);
+    expect(theirs).toBe(r.you.goalsAgainst);
+  });
+
+  test("the same seed gives the same minutes at both ends", () => {
+    const opts = {
+      league: "esp" as const, picks, lens: "season" as const,
+      pool: esp.clubSeasons, opponentSeason: SEASON, seed: "repeat-minutes",
+    };
+    const a = simulateSeason(opts);
+    const b = simulateSeason(opts);
+    const strip = (r: SeasonResult) =>
+      r.matches.map((m) => `${m.yourGoals.map((g) => g.minute)}|${m.oppGoals}`).join(";");
+    expect(strip(b)).toBe(strip(a));
+  });
+});

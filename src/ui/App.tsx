@@ -7,6 +7,7 @@ import { Draft } from "./Draft.tsx";
 import { Season } from "./Season.tsx";
 import { Setup } from "./Setup.tsx";
 import { useLeagueSummaries, usePool } from "./useArchive.ts";
+import { useSettings } from "./useSettings.ts";
 
 type Screen =
   | { at: "home" }
@@ -17,8 +18,9 @@ type Screen =
 export function App() {
   const { leagues, error } = useLeagueSummaries();
   const [screen, setScreen] = useState<Screen>({ at: "home" });
-  const [useJanuary, setUseJanuary] = useState(true);
-  const [useGaffers, setUseGaffers] = useState(true);
+  const [settings, updateSettings, resetSettings] = useSettings();
+  const useJanuary = settings.january;
+  const useGaffers = settings.gaffers;
 
   const { pool, loading } = usePool(screen.at === "home" ? null : screen.config.league);
 
@@ -72,6 +74,9 @@ export function App() {
 
           <Setup
             leagues={leagues}
+            settings={settings}
+            onChange={updateSettings}
+            onReset={resetSettings}
             onStart={(config) => setScreen({ at: "draft", config })}
           />
 
@@ -79,11 +84,11 @@ export function App() {
             <div className="field" style={{ marginBottom: 0 }}>
               <span className="field-label">Advanced</span>
               <div className="chip-grid">
-                <button className="chip chip-tall" aria-pressed={useGaffers} onClick={() => setUseGaffers(!useGaffers)} data-testid="toggle-gaffers">
+                <button className="chip chip-tall" aria-pressed={useGaffers} onClick={() => updateSettings({ gaffers: !useGaffers })} data-testid="toggle-gaffers">
                   <strong>Gaffers {useGaffers ? "on" : "off"}</strong>
                   <small>Roll for a manager after the draft. Their style tilts how your side plays.</small>
                 </button>
-                <button className="chip chip-tall" aria-pressed={useJanuary} onClick={() => setUseJanuary(!useJanuary)} data-testid="toggle-january">
+                <button className="chip chip-tall" aria-pressed={useJanuary} onClick={() => updateSettings({ january: !useJanuary })} data-testid="toggle-january">
                   <strong>January window {useJanuary ? "on" : "off"}</strong>
                   <small>At halfway, choose whether to roll for a transfer. Players can come in or go out.</small>
                 </button>

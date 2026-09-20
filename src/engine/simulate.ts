@@ -41,6 +41,12 @@ export interface Match {
   awayGoals: number;
   /** Your goals in this match, in minute order. Empty for matches without you. */
   yourGoals: GoalEvent[];
+  /**
+   * The minutes the opposition scored, in order. Only populated for your own
+   * matches, and without scorers: the archive holds no opposition line-ups,
+   * so naming who scored would be invention.
+   */
+  oppGoals: number[];
 }
 
 export interface TableRow {
@@ -338,6 +344,7 @@ function playMatch(
   const awayGoals = rng.poisson(xgAway);
 
   const yourGoals: GoalEvent[] = [];
+  const oppGoals: number[] = [];
   if (withYou) {
     const n = home.isYou ? homeGoals : awayGoals;
     for (let i = 0; i < n; i++) {
@@ -355,9 +362,13 @@ function playMatch(
       });
     }
     yourGoals.sort((a, b) => a.minute - b.minute);
+
+    const against = home.isYou ? awayGoals : homeGoals;
+    for (let i = 0; i < against; i++) oppGoals.push(1 + rng.int(90));
+    oppGoals.sort((a, b) => a - b);
   }
 
-  return { round, homeId: home.id, awayId: away.id, homeGoals, awayGoals, yourGoals };
+  return { round, homeId: home.id, awayId: away.id, homeGoals, awayGoals, yourGoals, oppGoals };
 }
 
 function buildTable(clubs: { id: string; name: string; isYou: boolean }[], matches: Match[]): TableRow[] {

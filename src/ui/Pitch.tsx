@@ -46,9 +46,10 @@ export function Pitch({ slots, picks, ratings, showRatings, highlight, targetInd
             style={{ left: `${x}%`, bottom: `${y}%` }}
             disabled={!onSlotClick}
             onClick={() => onSlotClick?.(slot.index)}
-            title={pick ? `${pick.player.name} — ${pick.club} ${pick.season}. Click to move.` : slot.slot}
+            title={pick ? `${pick.player.name} — ${pick.club} ${pick.season}. Click to move.` : slot.label}
             data-testid={`slot-${slot.index}`}
             data-slot={slot.slot}
+            data-side={slot.side ?? ""}
             data-filled={pick ? "true" : "false"}
             data-pid={pick?.player.pid}
           >
@@ -58,7 +59,7 @@ export function Pitch({ slots, picks, ratings, showRatings, highlight, targetInd
             {pick && (
               <span className="slot-label">
                 <span className="slot-name">{pick.player.name}</span>
-                <span className="slot-club">{pick.slot} · {pick.club}</span>
+                <span className="slot-club">{slot.label} · {pick.club}</span>
               </span>
             )}
           </button>

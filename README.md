@@ -110,9 +110,25 @@ differently, and so does this.
 | Difficulty | Easy 3 re-rolls, Normal 1, Hard 0 and ratings hidden |
 | Draft mode | Squad-first (spin then choose a slot) or position-first |
 | Rating lens | **Season** rates players as they were that year; **Prime** uses their career best |
-| Era | Restricts which club-seasons the wheel can land on |
+| Era | Restricts which club-seasons the wheel can land on. Defaults to the whole archive |
 | Gaffers | Roll for a manager archetype that tilts how the side plays |
 | January window | At halfway, choose whether to roll for a transfer |
+
+### Watching the season
+
+Every result is colour coded — green for a win, yellow for a draw, red for a defeat — on
+both the score and the edge of the card. Under each one is a 90-minute strip showing when
+the goals went in: yours above the line in green with the scorer named, theirs below in
+red. Opposition scorers are deliberately anonymous, because the archive holds no
+opposition line-ups and inventing names would be inventing history.
+
+Win the league and confetti fires from both bottom corners and fans across the screen,
+with a trophy above your final record. Anyone who has asked their system for reduced
+motion gets the result without the show.
+
+Your setup — league, season, formation, difficulty, era, everything — is remembered
+between runs, so coming back for another go does not mean setting it all up again. There
+is a reset link under the start button.
 
 ### Gaffers
 

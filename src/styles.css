@@ -971,3 +971,201 @@ tr.rel td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
   .move .move-in { grid-column: 2; }
   .live-round { font-size: 30px; }
 }
+
+/* ---------- round-two feedback ---------- */
+
+/* Result colour coding: win green, draw yellow, loss red. The class sits on
+   .match-card, so the score chip is targeted through it as well as directly. */
+.match-card.win  .score,  .fixture.win  .score { background: rgba(0, 255, 135, 0.18); color: var(--accent); }
+.match-card.draw .score,  .fixture.draw .score { background: rgba(245, 197, 24, 0.18); color: var(--gold); }
+.match-card.loss .score,  .fixture.loss .score { background: rgba(255, 77, 94, 0.18); color: var(--bad); }
+
+.match-card { border-left: 3px solid transparent; }
+.match-card.win  { border-left-color: var(--accent); }
+.match-card.draw { border-left-color: var(--gold); }
+.match-card.loss { border-left-color: var(--bad); }
+
+/* ---------- goal timeline ---------- */
+
+.goal-timeline {
+  position: relative;
+  height: 34px;
+  margin: 2px 14px 8px;
+}
+.gt-line {
+  position: absolute;
+  left: 0; right: 26px; top: 50%;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--line), var(--line-soft));
+}
+.gt-end {
+  position: absolute;
+  right: 0; top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.gt-goal {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+.gt-goal em {
+  font-style: normal;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 1px;
+}
+.gt-goal.mine   { top: 0; }
+.gt-goal.theirs { bottom: 0; flex-direction: column-reverse; }
+.gt-goal.mine em   { color: var(--accent); }
+.gt-goal.theirs em { color: var(--bad); }
+.gt-goal .ball { width: 13px; height: 13px; }
+.gt-goal.mine   .ball-body { fill: rgba(0, 255, 135, 0.22); stroke: var(--accent); }
+.gt-goal.theirs .ball-body { fill: rgba(255, 77, 94, 0.22); stroke: var(--bad); }
+.gt-goal.mine   .ball-panel { fill: var(--accent); }
+.gt-goal.theirs .ball-panel { fill: var(--bad); }
+
+/* Each goal pops in as the matchday lands. */
+.match-card.latest .gt-goal { animation: goal-pop 0.42s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+.match-card.latest .gt-goal.theirs { animation-delay: 0.08s; }
+
+@keyframes goal-pop {
+  from { opacity: 0; transform: translateX(-50%) scale(0.2); }
+  60%  { opacity: 1; transform: translateX(-50%) scale(1.25); }
+  to   { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+/* ---------- inline football ---------- */
+
+.ball { width: 12px; height: 12px; vertical-align: -2px; }
+.ball-body  { fill: rgba(255, 255, 255, 0.14); stroke: currentColor; stroke-width: 1.1; }
+.ball-panel { fill: currentColor; }
+.ball-seam  { stroke: currentColor; stroke-width: 0.9; fill: none; opacity: 0.75; }
+.match-scorers .scorer .ball { color: var(--accent); }
+
+/* ---------- slot chooser: which side of the pitch ---------- */
+
+.slot-option { position: relative; }
+.slot-map {
+  display: block;
+  width: 46px;
+  height: 46px;
+  margin: 0 auto 6px;
+}
+.sm-pitch { fill: rgba(18, 48, 31, 0.9); stroke: rgba(255, 255, 255, 0.14); stroke-width: 1.5; }
+.sm-line  { stroke: rgba(255, 255, 255, 0.14); stroke-width: 1.5; }
+.sm-dot         { fill: rgba(255, 255, 255, 0.22); }
+.sm-dot.taken   { fill: rgba(255, 255, 255, 0.38); }
+.sm-dot.on      { fill: var(--accent); }
+.slot-side {
+  display: block;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.slot-option[data-side="left"]  .slot-side,
+.slot-option[data-side="right"] .slot-side { color: var(--warn); }
+
+/* ---------- setup memory ---------- */
+
+.setup-memory { text-align: center; margin-top: 12px; }
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text-dim);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-size: inherit;
+}
+.link-btn:hover { color: var(--accent); }
+
+/* ---------- winning the league ---------- */
+
+.confetti {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 60;
+}
+.confetto {
+  position: absolute;
+  /* Two cannons, one in each bottom corner, just off-screen. The flight
+     itself is driven from confetti.ts through the Web Animations API. */
+  bottom: -2vh;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+.confetto.from-left  { left: -2vw; }
+.confetto.from-right { right: -2vw; }
+
+.confetto.c0 { background: var(--accent); }
+.confetto.c1 { background: var(--gold); }
+.confetto.c2 { background: #3b82f6; }
+.confetto.c3 { background: #ff4b7d; }
+.confetto.c4 { background: #ffffff; }
+.confetto.is-ball {
+  background: none;
+  width: 16px;
+  height: 16px;
+  color: var(--gold);
+}
+.confetto.is-ball .ball { width: 16px; height: 16px; }
+.confetto.is-ball .ball-body { fill: #fff; stroke: #1c2430; }
+.confetto.is-ball .ball-panel { fill: #1c2430; }
+.confetto.is-ball .ball-seam { stroke: #1c2430; }
+
+.trophy {
+  display: block;
+  width: 62px;
+  height: 62px;
+  margin: 0 auto 6px;
+  animation: trophy-lift 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+.trophy svg { width: 100%; height: 100%; overflow: visible; }
+.t-cup, .t-stem, .t-base, .t-plinth { fill: var(--gold); }
+.t-handle { fill: none; stroke: var(--gold); stroke-width: 3; stroke-linecap: round; }
+.t-sparks path { fill: #fff; opacity: 0; animation: spark 1.8s ease-in-out infinite; }
+.t-sparks path:nth-child(2) { animation-delay: 0.45s; }
+.t-sparks path:nth-child(3) { animation-delay: 0.9s; }
+.trophy.perfect .t-cup,
+.trophy.perfect .t-base,
+.trophy.perfect .t-plinth { filter: drop-shadow(0 0 10px rgba(245, 197, 24, 0.75)); }
+
+@keyframes trophy-lift {
+  from { opacity: 0; transform: translateY(26px) scale(0.7); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes spark {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  50%      { opacity: 0.95; transform: scale(1); }
+}
+
+.result-hero.champion { animation: hero-glow 2.6s ease-in-out 0.3s 2; }
+@keyframes hero-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 255, 135, 0); }
+  50%      { box-shadow: 0 0 34px 0 rgba(0, 255, 135, 0.18); }
+}
+
+/* Anyone who asks for less motion gets the result without the show. */
+@media (prefers-reduced-motion: reduce) {
+  .confetti { display: none; }
+  .trophy,
+  .result-hero.champion,
+  .match-card.latest .gt-goal,
+  .t-sparks path { animation: none; }
+  .trophy { opacity: 1; transform: none; }
+}

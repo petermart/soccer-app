@@ -69,6 +69,48 @@ describe("formations", () => {
   });
 });
 
+describe("slot sides", () => {
+  test("duplicate slots in a formation are told apart by side", () => {
+    // Two centre-backs used to render as two identical "CB" choices, so
+    // picking a side was a coin flip.
+    const back4 = slotsOf("4-3-3").filter((s) => s.slot === "CB");
+    expect(back4.length).toBe(2);
+    expect(new Set(back4.map((s) => s.side))).toEqual(new Set(["left", "right"]));
+    expect(new Set(back4.map((s) => s.label))).toEqual(new Set(["CB left", "CB right"]));
+  });
+
+  test("the side matches where the slot actually renders", () => {
+    for (const name of Object.keys(FORMATIONS)) {
+      for (const s of slotsOf(name)) {
+        if (s.side === "right") {
+          const mirror = slotsOf(name).find((o) => o.slot === s.slot && o.side === "left")!;
+          // Higher x renders further right on the pitch.
+          expect(s.coords[0]).toBeGreaterThan(mirror.coords[0]);
+        }
+      }
+    }
+  });
+
+  test("a unique slot name carries no side and is labelled plainly", () => {
+    const gk = slotsOf("4-3-3").find((s) => s.slot === "GK")!;
+    expect(gk.side).toBeNull();
+    expect(gk.label).toBe("GK");
+  });
+
+  test("three of the same slot get left, centre and right", () => {
+    const mids = slotsOf("4-3-3").filter((s) => s.slot === "CM");
+    expect(mids.length).toBe(3);
+    expect(new Set(mids.map((s) => s.side))).toEqual(new Set(["left", "centre", "right"]));
+  });
+
+  test("every formation labels its slots uniquely", () => {
+    for (const name of Object.keys(FORMATIONS)) {
+      const labels = slotsOf(name).map((s) => s.label);
+      expect(new Set(labels).size).toBe(labels.length);
+    }
+  });
+});
+
 describe("ratings", () => {
   test("a keeper is unusable outfield and vice versa", () => {
     const squad = eng.clubSeasons[0]!.players;

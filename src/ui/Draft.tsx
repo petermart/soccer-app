@@ -3,6 +3,7 @@ import {
   blockedFor, choicesFor, completedPicks, createDraft, draftPlayer, eligibleClubSeasons,
   movePick, moveTargets, reroll, spin, type DraftConfig, type DraftState,
 } from "../engine/draft.ts";
+import type { SquadSlot } from "../engine/formations.ts";
 import { LEAGUES } from "../engine/leagues.ts";
 import { playableSlots, rateTeam, ratingInSlot, slotNamesFor, type Pick } from "../engine/ratings.ts";
 import type { ClubSeason, PlayerSeason, Slot } from "../engine/types.ts";
@@ -221,7 +222,7 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
               <div className={`reel${spinning ? " spinning" : ""}`}>
                 {reelClub ?? (
                   state.targetSlotIndex !== null
-                    ? `Spin for ${state.slots[state.targetSlotIndex]!.slot}`
+                    ? `Spin for ${state.slots[state.targetSlotIndex]!.label}`
                     : "Spin the wheel"
                 )}
               </div>
@@ -259,7 +260,7 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
                     <h3>{state.currentClub.club}</h3>
                     <div className="sub">
                       {state.currentClub.season} · {sorted.length} eligible
-                      {state.targetSlotIndex !== null && <> for {state.slots[state.targetSlotIndex]!.slot}</>}
+                      {state.targetSlotIndex !== null && <> for {state.slots[state.targetSlotIndex]!.label}</>}
                     </div>
                   </div>
                   <div className="sort-row">
@@ -329,13 +330,22 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
         <div className="modal-backdrop" onClick={() => setPending(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} data-testid="slot-modal">
             <h3>{pending.player.name}</h3>
-            <p>Where do they play? Ratings shown are for that slot.</p>
+            <p>Where do they play? Each option shows exactly where on the pitch it sits.</p>
             <div className="slot-options">
               {state.slots
                 .filter((s) => state.picks[s.index] === null && pending.slots.includes(s.slot))
                 .map((s) => (
-                  <button key={s.index} className="slot-option" onClick={() => commit(pending.player, s.index)} data-testid="slot-option">
+                  <button
+                    key={s.index}
+                    className="slot-option"
+                    onClick={() => commit(pending.player, s.index)}
+                    data-testid="slot-option"
+                    data-slot-index={s.index}
+                    data-side={s.side ?? ""}
+                  >
+                    <SlotMap slots={state.slots} picks={state.picks} highlight={s.index} />
                     <strong>{s.slot}</strong>
+                    {s.side && <em className={`slot-side ${s.side}`}>{s.side}</em>}
                     {config.showRatings
                       ? <span>{ratingInSlot(pending.player, s.slot, config.lens)}</span>
                       : <small>rating hidden</small>}
@@ -349,6 +359,38 @@ export function Draft({ config, pool, onComplete, onRestart }: DraftProps) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * A thumbnail of the formation with one slot lit up.
+ *
+ * Two centre-backs used to appear in the chooser as two identical "CB"
+ * buttons, so picking a side was a coin flip. This shows which one you are
+ * actually choosing.
+ */
+function SlotMap({
+  slots, picks, highlight,
+}: { slots: SquadSlot[]; picks: (Pick | null)[]; highlight: number }) {
+  return (
+    <svg className="slot-map" viewBox="0 0 100 100" aria-hidden="true">
+      <rect x="1" y="1" width="98" height="98" rx="6" className="sm-pitch" />
+      <line x1="1" y1="50" x2="99" y2="50" className="sm-line" />
+      {slots.map((s) => {
+        const [x, y] = s.coords;
+        const state = s.index === highlight ? "on" : picks[s.index] ? "taken" : "open";
+        return (
+          <circle
+            key={s.index}
+            cx={x}
+            // Coordinates run back-to-front; SVG y runs top-down.
+            cy={100 - y}
+            r={s.index === highlight ? 11 : 6}
+            className={`sm-dot ${state}`}
+          />
+        );
+      })}
+    </svg>
   );
 }
 

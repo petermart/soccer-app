@@ -87,15 +87,57 @@ export const FORMATIONS: Record<string, Formation> = {
 
 export const FORMATION_NAMES = Object.keys(FORMATIONS);
 
+export type Side = "left" | "centre" | "right";
+
 export interface SquadSlot {
   /** Index within the formation, 0-10. */
   index: number;
   slot: Slot;
   coords: [number, number];
+  /**
+   * Set only when a formation uses this slot name more than once, so the two
+   * centre-backs in a 4-3-3 can be told apart. Null when the name is unique.
+   */
+  side: Side | null;
+  /** What to call this slot in the UI, e.g. "CB" or "CB left". */
+  label: string;
 }
 
 export function slotsOf(formationName: string): SquadSlot[] {
   const f = FORMATIONS[formationName];
   if (!f) throw new Error(`Unknown formation: ${formationName}`);
-  return f.slots.map((slot, index) => ({ index, slot, coords: f.coords[index]! }));
+
+  // Group the indices that share a slot name; only those need a side.
+  const byName = new Map<Slot, number[]>();
+  f.slots.forEach((slot, i) => {
+    const group = byName.get(slot);
+    if (group) group.push(i);
+    else byName.set(slot, [i]);
+  });
+
+  const sides = new Map<number, Side>();
+  for (const group of byName.values()) {
+    if (group.length < 2) continue;
+    // Higher x renders further right, so order right-to-left.
+    const ordered = [...group].sort((a, b) => f.coords[b]![0] - f.coords[a]![0]);
+    if (ordered.length === 2) {
+      sides.set(ordered[0]!, "right");
+      sides.set(ordered[1]!, "left");
+    } else {
+      sides.set(ordered[0]!, "right");
+      sides.set(ordered[ordered.length - 1]!, "left");
+      for (let i = 1; i < ordered.length - 1; i++) sides.set(ordered[i]!, "centre");
+    }
+  }
+
+  return f.slots.map((slot, index) => {
+    const side = sides.get(index) ?? null;
+    return {
+      index,
+      slot,
+      coords: f.coords[index]!,
+      side,
+      label: side ? `${slot} ${side}` : slot,
+    };
+  });
 }

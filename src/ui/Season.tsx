@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DraftConfig } from "../engine/draft.ts";
 import { januaryImpact, rollJanuary, type Gaffer, type JanuaryOutcome } from "../engine/extras.ts";
 import { LEAGUES } from "../engine/leagues.ts";
@@ -9,6 +9,7 @@ import {
 } from "../engine/simulate.ts";
 import type { ClubSeason } from "../engine/types.ts";
 import { describeStyle } from "./App.tsx";
+import { makePieces, trajectory } from "./confetti.ts";
 
 export interface SeasonProps {
   picks: Pick[];
@@ -177,7 +178,9 @@ export function Season(props: SeasonProps) {
 
   return (
     <div data-testid="season-result">
+      {season.champion && <Confetti intense={season.perfect} />}
       <div className={heroClass}>
+        {season.champion && <Trophy perfect={season.perfect} />}
         <div className="eyebrow">
           {cfg.country} · {season.seasonLabel} · {season.gamesPlayed} games
           {season.replacedClub && <> · in place of {season.replacedClub}</>}
@@ -334,25 +337,152 @@ function MatchCard({ match: m, nameOf, highlight }: { match: Match; nameOf: (id:
   const ga = home ? m.awayGoals : m.homeGoals;
   const cls = gf > ga ? "win" : gf < ga ? "loss" : "draw";
   const scorers = groupScorers(m.yourGoals);
+  const outcome = gf > ga ? "Won" : gf < ga ? "Lost" : "Drawn";
   return (
-    <div className={`match-card ${cls}${highlight ? " latest" : ""}`} data-testid="match" data-round={m.round} data-gf={gf} data-ga={ga}>
-      <div className="fixture">
+    <div
+      className={`match-card ${cls}${highlight ? " latest" : ""}`}
+      data-testid="match"
+      data-round={m.round}
+      data-gf={gf}
+      data-ga={ga}
+      data-outcome={cls}
+    >
+      <div className={`fixture ${cls}`}>
         <span className="rd">MD {m.round}</span>
         <span className="home">{nameOf(m.homeId)}</span>
-        <span className="score">{m.homeGoals}–{m.awayGoals}</span>
+        <span className="score" title={`${outcome} ${gf}–${ga}`}>{m.homeGoals}–{m.awayGoals}</span>
         <span className="away">{nameOf(m.awayId)}</span>
       </div>
+      <GoalTimeline match={m} />
       {scorers.length > 0 && (
         <div className={`match-scorers ${home ? "home" : "away"}`} data-testid="match-scorers">
           {scorers.map((s) => (
             <span key={s.pid} className="scorer" data-goals={s.minutes.length}>
-              ⚽ {s.name}
+              <BallIcon /> {s.name}
               {s.minutes.length > 1 && <b> ×{s.minutes.length}</b>}{" "}
               <small>{s.minutes.map((min) => `${min}'`).join(", ")}</small>
             </span>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Full-screen confetti for winning the league.
+ *
+ * It fires up from the bottom like a row of cannons, fans outward, then
+ * falls back gently — rather than drifting down from the top, which reads as
+ * weather instead of celebration. The two-phase arc is done with per-keyframe
+ * easing in CSS; the values below only set where each piece goes.
+ *
+ * Pieces are laid out once from a fixed pattern rather than re-randomised on
+ * every render, the whole layer is inert to pointers, and it is switched off
+ * entirely for anyone who asks for reduced motion.
+ */
+function Confetti({ intense = false }: { intense?: boolean }) {
+  const host = useRef<HTMLDivElement>(null);
+  const pieces = useMemo(
+    () => makePieces(
+      intense ? 320 : 240,
+      typeof window === "undefined" ? 1280 : window.innerWidth,
+      typeof window === "undefined" ? 800 : window.innerHeight,
+    ),
+    [intense],
+  );
+
+  useEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    // Anyone who has asked for less motion gets the result without the show.
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if (typeof el.animate !== "function") return;
+
+    const running = [...el.children].map((child, i) =>
+      (child as HTMLElement).animate(trajectory(pieces[i]!), {
+        duration: pieces[i]!.duration * 1000,
+        delay: pieces[i]!.delay * 1000,
+        easing: "linear", // the physics is in the samples, not the curve
+        fill: "forwards",
+      }),
+    );
+    return () => running.forEach((a) => a.cancel());
+  }, [pieces]);
+
+  return (
+    <div className="confetti" data-testid="confetti" aria-hidden="true" ref={host}>
+      {pieces.map((p, i) => (
+        <span
+          key={i}
+          className={`confetto c${p.hue}${p.ball ? " is-ball" : ""} ${p.fromLeft ? "from-left" : "from-right"}`}
+        >
+          {p.ball && <BallIcon />}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** The trophy lift above the final record. */
+function Trophy({ perfect }: { perfect: boolean }) {
+  return (
+    <div className={`trophy${perfect ? " perfect" : ""}`} data-testid="trophy" aria-hidden="true">
+      <svg viewBox="0 0 64 64">
+        <path className="t-cup" d="M20 10h24v14a12 12 0 0 1-24 0Z" />
+        <path className="t-handle" d="M20 13h-6a6 6 0 0 0 6 10M44 13h6a6 6 0 0 1-6 10" />
+        <path className="t-stem" d="M30 36h4v9h-4z" />
+        <path className="t-base" d="M22 45h20v5H22z" />
+        <path className="t-plinth" d="M18 50h28v5H18z" />
+        <g className="t-sparks">
+          <path d="M12 8l1.6 3.4L17 13l-3.4 1.6L12 18l-1.6-3.4L7 13l3.4-1.6Z" />
+          <path d="M52 6l1.2 2.6L56 10l-2.8 1.2L52 14l-1.2-2.8L48 10l2.8-1.4Z" />
+          <path d="M55 26l1 2.2 2.2 1-2.2 1L55 32l-1-1.8-2.2-1 2.2-1Z" />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+/** A small inline football, so goals read at a glance without an emoji font. */
+function BallIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg className={`ball ${className}`} viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="7" className="ball-body" />
+      <path className="ball-panel" d="M8 3.6 10.6 5.5 9.6 8.6H6.4L5.4 5.5Z" />
+      <path className="ball-seam" d="M8 1v2.6M2.1 6.4l3.3-.9M13.9 6.4l-3.3-.9M4.4 13.3l2-4.7M11.6 13.3l-2-4.7" />
+    </svg>
+  );
+}
+
+/**
+ * Both sides' goals on one 90-minute strip: yours above the line in green,
+ * theirs below in red. Opposition scorers are not named because the archive
+ * holds no opposition line-ups.
+ */
+function GoalTimeline({ match: m }: { match: Match }) {
+  const mine = m.yourGoals.map((g) => g.minute);
+  const theirs = m.oppGoals ?? [];
+  if (mine.length === 0 && theirs.length === 0) return null;
+
+  const at = (minute: number) => `${Math.min(98, Math.max(2, (minute / 92) * 100))}%`;
+
+  return (
+    <div className="goal-timeline" data-testid="goal-timeline" aria-hidden="true">
+      <span className="gt-line" />
+      {mine.map((minute, i) => (
+        <span key={`m${i}`} className="gt-goal mine" style={{ left: at(minute) }} title={`You scored ${minute}'`}>
+          <BallIcon />
+          <em>{minute}'</em>
+        </span>
+      ))}
+      {theirs.map((minute, i) => (
+        <span key={`t${i}`} className="gt-goal theirs" style={{ left: at(minute) }} title={`Conceded ${minute}'`}>
+          <BallIcon />
+          <em>{minute}'</em>
+        </span>
+      ))}
+      <span className="gt-end">90'</span>
     </div>
   );
 }
