@@ -22,10 +22,12 @@ interface RawArchive {
   league: LeagueId;
   seasons: string[];
   shape: Record<string, number>;
+  /** Career-best slot ratings, keyed by player id, shared across their seasons. */
+  peaks?: Record<string, number[]>;
   clubSeasons: RawClubSeason[];
 }
 
-function inflatePlayer(t: PlayerTuple): PlayerSeason {
+function inflatePlayer(t: PlayerTuple, peaks: Record<string, number[]>): PlayerSeason {
   return {
     pid: t[0],
     name: t[1],
@@ -37,6 +39,7 @@ function inflatePlayer(t: PlayerTuple): PlayerSeason {
     positions: t[7].split(",").filter(Boolean) as Slot[],
     careerPositions: (t[10] || t[7]).split(",").filter(Boolean) as Slot[],
     slotRatings: t[8],
+    primeSlotRatings: peaks[String(t[0])] ?? null,
     face: t[9],
   };
 }
@@ -57,7 +60,7 @@ export function inflateArchive(raw: RawArchive): LeagueArchive {
         attack: cs.attack,
         defence: cs.defence,
         rating: cs.rating,
-        players: cs.players.map(inflatePlayer),
+        players: cs.players.map((t) => inflatePlayer(t, raw.peaks ?? {})),
       }),
     ),
   };

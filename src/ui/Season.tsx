@@ -11,6 +11,7 @@ import type { ClubSeason } from "../engine/types.ts";
 import { describeStyle } from "./App.tsx";
 import { makePieces, trajectory } from "./confetti.ts";
 import { Die } from "./icons.tsx";
+import { Europe } from "./Europe.tsx";
 
 export interface SeasonProps {
   picks: Pick[];
@@ -19,6 +20,7 @@ export interface SeasonProps {
   seed: string;
   gaffer: Gaffer | null;
   useJanuary: boolean;
+  useEurope: boolean;
   onRestart: () => void;
   onReplay: () => void;
 }
@@ -311,6 +313,20 @@ export function Season(props: SeasonProps) {
         </div>
       </div>
 
+      {props.useEurope && (
+        <Europe
+          season={season.seasonLabel}
+          league={config.league}
+          position={season.you.position}
+          teamName={season.you.name}
+          picks={finalXi}
+          lens={config.lens}
+          rating={season.secondHalfRating ?? season.rating}
+          style={gaffer ?? undefined}
+          seed={seed}
+        />
+      )}
+
       <div className="actions">
         <button className="btn btn-primary btn-lg" onClick={props.onReplay} data-testid="replay">Re-simulate this XI</button>
         <button className="btn btn-lg" onClick={share}>Copy result</button>
@@ -332,7 +348,7 @@ export function groupScorers(goals: GoalEvent[]): { pid: number; name: string; m
   return [...byPid.values()].sort((a, b) => b.minutes.length - a.minutes.length || a.minutes[0]! - b.minutes[0]!);
 }
 
-function MatchCard({ match: m, nameOf, highlight }: { match: Match; nameOf: (id: string) => string; highlight?: boolean }) {
+export function MatchCard({ match: m, nameOf, highlight }: { match: Match; nameOf: (id: string) => string; highlight?: boolean }) {
   const home = m.homeId === YOU;
   const gf = home ? m.homeGoals : m.awayGoals;
   const ga = home ? m.awayGoals : m.homeGoals;
@@ -382,7 +398,7 @@ function MatchCard({ match: m, nameOf, highlight }: { match: Match; nameOf: (id:
  * every render, the whole layer is inert to pointers, and it is switched off
  * entirely for anyone who asks for reduced motion.
  */
-function Confetti({ intense = false }: { intense?: boolean }) {
+export function Confetti({ intense = false }: { intense?: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const pieces = useMemo(
     () => makePieces(
@@ -446,7 +462,7 @@ function Trophy({ perfect }: { perfect: boolean }) {
 }
 
 /** A small inline football, so goals read at a glance without an emoji font. */
-function BallIcon({ className = "" }: { className?: string }) {
+export function BallIcon({ className = "" }: { className?: string }) {
   return (
     <svg className={`ball ${className}`} viewBox="0 0 16 16" aria-hidden="true">
       <circle cx="8" cy="8" r="7" className="ball-body" />

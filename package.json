@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "bun --hot src/server.ts",
     "start": "bun src/server.ts",
-    "build:data": "bun scripts/build-data.ts",
+    "build:data": "bun scripts/build-data.ts && bun scripts/build-europe.ts",
     "fetch:data": "bun scripts/fetch-data.ts",
     "test": "bun test",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "build:europe": "bun scripts/build-europe.ts"
   },
   "dependencies": {
     "react": "^19.0.0",

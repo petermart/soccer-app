@@ -22,6 +22,7 @@ export function App() {
   const [settings, updateSettings, resetSettings] = useSettings();
   const useJanuary = settings.january;
   const useGaffers = settings.gaffers;
+  const useEurope = settings.europe;
 
   const { pool, loading } = usePool(screen.at === "home" ? null : screen.config.league);
 
@@ -93,6 +94,10 @@ export function App() {
                   <strong>January window {useJanuary ? "on" : "off"}</strong>
                   <small>At halfway, choose whether to roll for a transfer. Players can come in or go out.</small>
                 </button>
+                <button className="chip chip-tall" aria-pressed={useEurope} onClick={() => updateSettings({ europe: !useEurope })} data-testid="toggle-europe">
+                  <strong>European nights {useEurope ? "on" : "off"}</strong>
+                  <small>Finish top six and play the real European field: four to the Champions League, fifth Europa, sixth Conference.</small>
+                </button>
               </div>
             </div>
           </div>
@@ -159,6 +164,7 @@ export function App() {
           seed={screen.runSeed}
           gaffer={screen.gaffer}
           useJanuary={useJanuary}
+          useEurope={useEurope}
           onRestart={() => setScreen({ at: "home" })}
           onReplay={() =>
             setScreen({ ...screen, runSeed: `${screen.config.seed}:${Math.floor(Math.random() * 1e9)}` })

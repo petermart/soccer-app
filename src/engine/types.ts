@@ -45,6 +45,11 @@ export interface PlayerSeason {
   careerPositions: Slot[];
   /** Per-slot rating, index-aligned with SLOTS. 0 means unusable there. */
   slotRatings: number[];
+  /**
+   * The same per-slot ratings taken from the player's career-best edition,
+   * which is what the "Prime" lens reads. Null when that edition is unknown.
+   */
+  primeSlotRatings: number[] | null;
   /** pace, shooting, passing, dribbling, defending, physical. */
   face: [number, number, number, number, number, number];
 }

@@ -8,8 +8,8 @@ import {
   movePick, moveTargets, spin, type DraftConfig,
 } from "../src/engine/draft.ts";
 import { LEAGUE_ORDER } from "../src/engine/leagues.ts";
-import { canPlaySlot, playableSlots } from "../src/engine/ratings.ts";
-import { SLOTS, type LeagueArchive } from "../src/engine/types.ts";
+import { canPlaySlot, playableSlots, ratingInSlot } from "../src/engine/ratings.ts";
+import { SLOTS, type LeagueArchive, type PlayerSeason } from "../src/engine/types.ts";
 
 const archives = new Map<string, LeagueArchive>();
 for (const id of LEAGUE_ORDER) {
@@ -235,5 +235,84 @@ describe("moving a drafted player", () => {
         expect(p.slot).toBe(state.slots[p.slotIndex]!.slot);
       }
     }
+  });
+});
+
+describe("the Prime lens reads a real peak rating", () => {
+  /** Best rating across the positions a player may actually be slotted at. */
+  const bestUnder = (p: PlayerSeason, lens: "season" | "prime") =>
+    Math.max(...playableSlots(p).map((s) => ratingInSlot(p, s, lens)));
+
+  test("every archive carries peak slot ratings for every player", () => {
+    for (const league of LEAGUE_ORDER) {
+      const arc = archives.get(league)!;
+      let missing = 0;
+      for (const cs of arc.clubSeasons) {
+        for (const p of cs.players) if (!p.primeSlotRatings) missing++;
+      }
+      expect(missing).toBe(0);
+    }
+  });
+
+  test("Prime never invents a rating far above the peak the player reached", () => {
+    // It used to: the lens scaled the current slot rating by prime/overall,
+    // so a 49-rated teenager came out at 91 against a real peak of 80. The
+    // small remaining gap is EA's position-rating maths, the same gap the
+    // season lens shows against overall.
+    for (const league of LEAGUE_ORDER) {
+      const arc = archives.get(league)!;
+      let n = 0;
+      let sum = 0;
+      let wild = 0;
+      for (const cs of arc.clubSeasons) {
+        for (const p of cs.players) {
+          if (p.positions.includes("GK")) continue;
+          const gap = bestUnder(p, "prime") - p.prime;
+          n++; sum += gap;
+          if (gap > 8) wild++;
+        }
+      }
+      expect(sum / n).toBeLessThan(1.2);
+      expect(wild / n).toBeLessThan(0.005);
+    }
+  });
+
+  test("Prime is never below the season being drafted from, on the whole", () => {
+    // Per player the two can differ by a few points even at equal overall,
+    // because the peak edition has its own attributes. What must hold is the
+    // direction: Prime lifts a squad, it does not quietly lower one.
+    const arc = archives.get("fra")!;
+    let n = 0;
+    let lifted = 0;
+    let sum = 0;
+    for (const cs of arc.clubSeasons) {
+      for (const p of cs.players) {
+        if (p.positions.includes("GK")) continue;
+        expect(p.prime).toBeGreaterThanOrEqual(p.overall);
+        const diff = bestUnder(p, "prime") - bestUnder(p, "season");
+        n++; sum += diff;
+        if (diff >= 0) lifted++;
+      }
+    }
+    expect(sum / n).toBeGreaterThan(2);
+    expect(lifted / n).toBeGreaterThan(0.9);
+  });
+
+  test("a player already at their peak rates about the same under both lenses", () => {
+    const arc = archives.get("fra")!;
+    let checked = 0;
+    let sum = 0;
+    for (const cs of arc.clubSeasons) {
+      for (const p of cs.players) {
+        if (p.overall !== p.prime || p.positions.includes("GK")) continue;
+        // Within a few points: same overall, but the peak edition can be a
+        // different year with slightly different attributes.
+        expect(Math.abs(bestUnder(p, "prime") - bestUnder(p, "season"))).toBeLessThanOrEqual(6);
+        sum += Math.abs(bestUnder(p, "prime") - bestUnder(p, "season"));
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(500);
+    expect(sum / checked).toBeLessThan(1);
   });
 });

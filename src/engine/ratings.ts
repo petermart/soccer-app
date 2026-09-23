@@ -18,13 +18,18 @@ export interface Pick {
  * someone out of position cost you something real rather than a flat penalty.
  */
 export function ratingInSlot(player: PlayerSeason, slot: Slot, lens: RatingLens): number {
+  if (lens === "prime") {
+    // Read the rating the player actually had in their best season. Scaling
+    // the current one by prime/overall used to invent numbers: a 49-rated
+    // teenager multiplied by 80/49 came out at 91, eleven points above the
+    // peak he ever reached, and worst in Ligue 1 where the young and lowly
+    // rated are thickest on the ground.
+    const peak = player.primeSlotRatings?.[SLOT_INDEX[slot]] ?? 0;
+    if (peak > 0) return peak;
+    return outOfPositionFallback(player, slot, player.prime);
+  }
   const raw = player.slotRatings[SLOT_INDEX[slot]] ?? 0;
-  const natural = player.overall;
-  const base = raw > 0 ? raw : outOfPositionFallback(player, slot);
-  if (lens === "season") return base;
-  // Prime scales the slot rating by how much better their best year was.
-  const scale = natural > 0 ? player.prime / natural : 1;
-  return Math.min(99, Math.round(base * scale));
+  return raw > 0 ? raw : outOfPositionFallback(player, slot, player.overall);
 }
 
 /**
@@ -32,12 +37,12 @@ export function ratingInSlot(player: PlayerSeason, slot: Slot, lens: RatingLens)
  * than let a nonsense pick read as zero, fall back to a heavy penalty so the
  * squad is still playable but clearly worse for it.
  */
-function outOfPositionFallback(player: PlayerSeason, slot: Slot): number {
+function outOfPositionFallback(player: PlayerSeason, slot: Slot, from: number): number {
   const isKeeper = player.positions.includes("GK");
   const wantsKeeper = slot === "GK";
-  if (isKeeper && !wantsKeeper) return Math.max(20, player.overall - 32);
-  if (!isKeeper && wantsKeeper) return Math.max(20, player.overall - 30);
-  return Math.max(20, player.overall - 12);
+  if (isKeeper && !wantsKeeper) return Math.max(20, from - 32);
+  if (!isKeeper && wantsKeeper) return Math.max(20, from - 30);
+  return Math.max(20, from - 12);
 }
 
 /**

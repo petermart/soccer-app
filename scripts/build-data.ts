@@ -93,12 +93,17 @@ function parsePositions(raw: string): Slot[] {
 // Career facts per player, across every edition and every league (not just
 // the big five), so a player looks the same whichever club-season you meet:
 //   prime      career-best overall, for the "Prime" lens
+//   peak slots the per-slot ratings from that same career-best edition, so
+//              "Prime" can read a real rating rather than scaling the current
+//              one — scaling a 49-rated teenager by prime/overall invented
+//              numbers well above the peak they actually reached
 //   name       the name the games most often displayed (the `alias` column,
 //              e.g. "Raphinha" where short_name says "R. Dias")
 //   positions  every position EA listed them at, primary and secondary
 
 console.log("Pass 1: career peaks, names and positions across 20 editions…");
 const primeById = new Map<string, number>();
+const peakSlotsById = new Map<string, number[]>();
 const aliasesById = new Map<string, Map<string, { count: number; last: number }>>();
 const positionsById = new Map<string, { editions: number; listed: Map<Slot, number>; primary: Set<Slot> }>();
 
@@ -110,13 +115,24 @@ for (const [editionIdx, edition] of EDITIONS.entries()) {
   // Older mirrors of the dataset may lack the alias column; fall back to short_name.
   const aliasIdx = t.header.findIndex((h) => h.trim() === "alias");
   const posIdx = t.index("positions");
+  const peakAttrIdx = ATTRIBUTES.map((a) => t.index(a));
+  const peakBaseIdx = ["overall", "pace", "shooting", "passing", "dribbling", "defending", "physical"]
+    .map((c) => t.index(c));
   const seen = new Set<string>();
   for (const r of t.rows) {
     const id = r[idIdx]?.trim();
     const ovr = Number(r[ovrIdx]);
     if (!id || !Number.isFinite(ovr)) continue;
     const cur = primeById.get(id);
-    if (cur === undefined || ovr > cur) primeById.set(id, ovr);
+    // `>=` so the most recent edition at the peak wins: later editions record
+    // every attribute, where the oldest ones need half of them imputed.
+    if (cur === undefined || ovr >= cur) {
+      primeById.set(id, ovr);
+      const isKeeper = (r[posIdx] ?? "").toUpperCase().includes("GK");
+      const base = peakBaseIdx.map((i) => Number(r[i]) || 0);
+      const attrs = fillMissingAttributes(peakAttrIdx.map((i) => Number(r[i]) || 0), base, isKeeper);
+      peakSlotsById.set(id, deriveSlotRatings(attrs, ovr, isKeeper));
+    }
 
     // A player can appear twice in one edition (mid-season roster updates);
     // count each edition once.
@@ -273,6 +289,9 @@ for (const edition of EDITIONS) {
       positions,
       careerPositions: career.length ? career : positions,
       slotRatings: deriveSlotRatings(attrs, overall, isKeeper),
+      // Opponent clubs are always rated through the season lens, so the peak
+      // ratings are not needed here; they are emitted per league instead.
+      primeSlotRatings: null,
       face,
     });
   }
@@ -346,7 +365,19 @@ for (const league of LEAGUE_ORDER) {
   for (const cs of clubSeasons) shape[cs.season] = (shape[cs.season] ?? 0) + 1;
 
   const path = `${OUT_DIR}/${league}.json`;
-  writeFileSync(path, JSON.stringify({ league, seasons, shape, clubSeasons }));
+  // Peak slot ratings are keyed by player rather than repeated on each of
+  // that player's twenty possible seasons.
+  const peaks: Record<string, number[]> = {};
+  for (const cs of clubSeasons) {
+    for (const tuple of cs.players) {
+      const pid = String((tuple as unknown[])[0]);
+      if (peaks[pid]) continue;
+      const slots = peakSlotsById.get(pid);
+      if (slots) peaks[pid] = slots;
+    }
+  }
+
+  writeFileSync(path, JSON.stringify({ league, seasons, shape, peaks, clubSeasons }));
 
   const players = clubSeasons.reduce((s, c) => s + c.players.length, 0);
   const bytes = Bun.file(path).size;

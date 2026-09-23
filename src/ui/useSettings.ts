@@ -24,6 +24,7 @@ export interface Settings {
   teamName: string;
   gaffers: boolean;
   january: boolean;
+  europe: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -38,6 +39,7 @@ export const DEFAULT_SETTINGS: Settings = {
   teamName: "",
   gaffers: true,
   january: true,
+  europe: true,
 };
 
 const KEY = "perfect-xi:settings:v1";
@@ -71,6 +73,7 @@ function sanitise(s: Settings): Settings {
     showRatings: typeof s.showRatings === "boolean" ? s.showRatings : true,
     gaffers: typeof s.gaffers === "boolean" ? s.gaffers : true,
     january: typeof s.january === "boolean" ? s.january : true,
+    europe: typeof s.europe === "boolean" ? s.europe : true,
     teamName: typeof s.teamName === "string" ? s.teamName.slice(0, 28) : "",
     range: Array.isArray(s.range) && s.range.length === 2 ? s.range : null,
   };

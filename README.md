@@ -20,7 +20,7 @@ bun install
 bun run dev          # http://localhost:3838
 ```
 
-`bun test` runs the engine suite (52 tests, no network).
+`bun test` runs the engine suite (88 tests, no network).
 
 `bun run test:e2e` plays the game in a real browser with Playwright: it drafts an
 eleven, rolls a gaffer, takes the January window and reads the final table. It needs
@@ -34,7 +34,7 @@ gitignored and fetched on demand.
 
 ```bash
 bun run fetch:data   # ~100MB: ratings + fixtures
-bun run build:data   # rewrites src/data/*.json
+bun run build:data   # rewrites src/data/*.json, then src/data/europe.json
 ```
 
 The two fitted models in `src/data/` are committed, so that is enough. To refit them from
@@ -89,6 +89,17 @@ can line up beside a 2024/25 Bayern midfielder. Only the opposition is pinned to
 A run is reproducible from its code: `?seed=ABCD-1234` replays the same spins, the same
 gaffer, the same window and the same scorelines.
 
+### The two rating lenses
+
+**Season** rates a player as they were in the club-season you drafted them from. **Prime**
+rates them as they were in their best season anywhere — reading that season's actual
+per-position ratings, not scaling the current ones. Scaling was the old behaviour and it
+invented numbers: a 49-rated teenager multiplied by prime/overall came out at 91 against a
+real peak of 80, worst in Ligue 1 where the young and lowly rated are thickest on the
+ground. Prime now sits about 0.7 of a point above a player's peak overall, the same small
+gap the season lens shows against overall, which is EA's position-rating maths rather than
+distortion.
+
 ### Positions
 
 A player may only be slotted at a position EA has actually listed them at, across all
@@ -109,10 +120,11 @@ differently, and so does this.
 | Formation | 12 of them, from 4-3-3 to 4-2-2-2 |
 | Difficulty | Easy 3 re-rolls, Normal 1, Hard 0 and ratings hidden |
 | Draft mode | Squad-first (spin then choose a slot) or position-first |
-| Rating lens | **Season** rates players as they were that year; **Prime** uses their career best |
+| Rating lens | **Season** rates players as they were that year; **Prime** uses the ratings from their career-best season |
 | Era | Restricts which club-seasons the wheel can land on. Defaults to the whole archive |
 | Gaffers | Roll for a manager archetype that tilts how the side plays |
 | January window | At halfway, choose whether to roll for a transfer |
+| European nights | Finish top six and play the real European field for that season |
 
 ### Rolls and spins
 
@@ -148,6 +160,30 @@ and defence by a point or two and scales the goals in your games at both ends, s
 under The Sergeant is a different watch from one under The Gambler. What they cannot do is
 win you the league: no archetype is worth more than about one rating point net, and section
 4 of `calibrate.ts` fails the smell test if any of them starts swinging title odds.
+
+### European nights
+
+Where you finish decides what you play in: **top four to the Champions League, fifth to
+the Europa League, sixth to the Conference League.** The clubs you meet are the ones who
+really qualified for that competition that season — worked out from the previous season's
+actual final table — and you take the place of the club from your own league that scraped
+in last. Finish fourth in Spain in 2025/26 and you displace Athletic Bilbao, lining up
+against Barcelona, Real Madrid, Arsenal, Bayern and the rest.
+
+A big field plays eight league-phase matches against eight different opponents, the way
+the competition has run since 2024/25, then the top four go straight to the quarter-finals
+while fifth to twelfth play off. A small field plays everyone home and away and the top
+two contest a final.
+
+**What is simplified.** That qualification rule is close to today's shape but is not the
+real rulebook: cup winners take a Europa League place regardless of where they finish, the
+best-performing countries have had a fifth Champions League place since 2024/25, France
+and Italy often had three rather than four, and the Conference League only exists from
+2021/22. The fields are also built from the big five leagues alone, because those are the
+only leagues this archive holds ratings for — a real Champions League also has Portuguese,
+Dutch and Scottish clubs. The whole rule is one object, `QUALIFICATION` in
+`src/engine/europe.ts`, and can be corrected per league or per season without touching
+anything that reads it. The app shows a short version of this note next to the results.
 
 ### The January window
 
