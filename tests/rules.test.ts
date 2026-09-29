@@ -316,3 +316,44 @@ describe("the Prime lens reads a real peak rating", () => {
     expect(sum / checked).toBeLessThan(1);
   });
 });
+
+describe("an archive without peak ratings degrades gracefully", () => {
+  /**
+   * Archives are served with a one-year immutable cache. A browser holding a
+   * copy from before peak ratings existed must still get sensible numbers,
+   * not a twelve-point cliff — that turned a prime Messi into an 82.
+   */
+  const stripPeaks = (p: PlayerSeason): PlayerSeason => ({ ...p, primeSlotRatings: null });
+
+  test("Prime still lands near the player's peak without peak data", () => {
+    const arc = archives.get("esp")!;
+    const sample = arc.clubSeasons
+      .flatMap((cs) => cs.players)
+      .filter((p) => !p.positions.includes("GK") && p.prime >= 80)
+      .slice(0, 400);
+    expect(sample.length).toBeGreaterThan(100);
+
+    let sum = 0;
+    for (const p of sample) {
+      const best = Math.max(...playableSlots(p).map((s) => ratingInSlot(stripPeaks(p), s, "prime")));
+      // Never the flat prime-minus-twelve cliff, and never wildly adrift.
+      expect(best).toBeGreaterThanOrEqual(p.prime - 8);
+      sum += best - p.prime;
+    }
+    // On average it lands on the peak rather than well below it.
+    expect(Math.abs(sum / sample.length)).toBeLessThan(2);
+  });
+
+  test("a prime Messi is never an 82", () => {
+    const arc = archives.get("esp")!;
+    const messi = arc.clubSeasons
+      .flatMap((cs) => cs.players)
+      .find((p) => p.name.includes("Messi") && p.prime >= 90);
+    expect(messi).toBeDefined();
+
+    for (const player of [messi!, stripPeaks(messi!)]) {
+      const best = Math.max(...playableSlots(player).map((s) => ratingInSlot(player, s, "prime")));
+      expect(best).toBeGreaterThanOrEqual(90);
+    }
+  });
+});

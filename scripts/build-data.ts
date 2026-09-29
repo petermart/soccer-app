@@ -394,6 +394,17 @@ for (const league of LEAGUE_ORDER) {
 }
 
 writeFileSync(`${OUT_DIR}/manifest.json`, JSON.stringify(manifest, null, 2));
+
+// A fingerprint of what was just written. The archives are served with a
+// one-year immutable cache, so their URL has to change when their contents
+// do — otherwise a returning browser keeps an old copy and the app reads
+// fields that copy does not have.
+const fingerprint = LEAGUE_ORDER
+  .map((l) => `${l}:${Bun.file(`${OUT_DIR}/${l}.json`).size}`)
+  .join("|");
+const version = Bun.hash(fingerprint).toString(36).slice(0, 10);
+writeFileSync(`${OUT_DIR}/version.json`, JSON.stringify({ version }, null, 2));
+console.log(`Data version ${version}`);
 console.log(`\nWrote ${OUT_DIR}/manifest.json`);
 
 if (missing.length) {

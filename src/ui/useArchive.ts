@@ -2,6 +2,18 @@ import { useEffect, useState } from "react";
 import { inflateArchive } from "../engine/archive.ts";
 import type { LeagueId } from "../engine/leagues.ts";
 import type { ClubSeason, LeagueArchive } from "../engine/types.ts";
+import dataVersion from "../data/version.json" with { type: "json" };
+
+/**
+ * Archives are served with a one-year immutable cache, which is right for
+ * files this size but means the URL must change whenever the contents do.
+ * The build writes a fingerprint of the archives to version.json and it is
+ * baked into this bundle, so a rebuilt archive is always a new URL.
+ *
+ * Without it, a returning browser kept its old copy and the app read fields
+ * that copy did not have — which is how a prime Messi came out at 82.
+ */
+const VERSION = (dataVersion as { version: string }).version;
 
 export interface LeagueSummary {
   id: LeagueId;
@@ -31,7 +43,7 @@ export async function loadArchive(id: LeagueId): Promise<LeagueArchive> {
   if (pending) return pending;
 
   const promise = (async () => {
-    const res = await fetch(`/api/league/${id}`);
+    const res = await fetch(`/api/league/${id}?v=${VERSION}`);
     if (!res.ok) throw new Error(`Could not load ${id}: ${res.status}`);
     const archive = inflateArchive(await res.json());
     cache.set(id, archive);

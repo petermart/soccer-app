@@ -26,6 +26,16 @@ export function ratingInSlot(player: PlayerSeason, slot: Slot, lens: RatingLens)
     // rated are thickest on the ground.
     const peak = player.primeSlotRatings?.[SLOT_INDEX[slot]] ?? 0;
     if (peak > 0) return peak;
+    if (!player.primeSlotRatings) {
+      // An archive from before peak ratings existed — a browser holding a
+      // long-cached copy, say. Degrade to the old scaling, which was rough
+      // but close, rather than dropping a flat twelve points and turning a
+      // prime Messi into an 82.
+      const raw = player.slotRatings[SLOT_INDEX[slot]] ?? 0;
+      const base = raw > 0 ? raw : outOfPositionFallback(player, slot, player.overall);
+      const scale = player.overall > 0 ? player.prime / player.overall : 1;
+      return Math.min(99, Math.round(base * scale));
+    }
     return outOfPositionFallback(player, slot, player.prime);
   }
   const raw = player.slotRatings[SLOT_INDEX[slot]] ?? 0;
